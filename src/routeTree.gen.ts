@@ -10,33 +10,102 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DecisionLogRouteImport } from './routes/decision-log'
+import { Route as EnergyAssetsRouteImport } from './routes/energy-assets'
+import { Route as ForecastRouteImport } from './routes/forecast'
+import { Route as MissionPlannerRouteImport } from './routes/mission-planner'
+import { Route as ScenarioSimulatorRouteImport } from './routes/scenario-simulator'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DecisionLogRoute = DecisionLogRouteImport.update({
+  id: '/decision-log',
+  path: '/decision-log',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnergyAssetsRoute = EnergyAssetsRouteImport.update({
+  id: '/energy-assets',
+  path: '/energy-assets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForecastRoute = ForecastRouteImport.update({
+  id: '/forecast',
+  path: '/forecast',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MissionPlannerRoute = MissionPlannerRouteImport.update({
+  id: '/mission-planner',
+  path: '/mission-planner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScenarioSimulatorRoute = ScenarioSimulatorRouteImport.update({
+  id: '/scenario-simulator',
+  path: '/scenario-simulator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/decision-log': typeof DecisionLogRoute
+  '/energy-assets': typeof EnergyAssetsRoute
+  '/forecast': typeof ForecastRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/decision-log': typeof DecisionLogRoute
+  '/energy-assets': typeof EnergyAssetsRoute
+  '/forecast': typeof ForecastRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/decision-log': typeof DecisionLogRoute
+  '/energy-assets': typeof EnergyAssetsRoute
+  '/forecast': typeof ForecastRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/decision-log'
+    | '/energy-assets'
+    | '/forecast'
+    | '/mission-planner'
+    | '/scenario-simulator'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/decision-log'
+    | '/energy-assets'
+    | '/forecast'
+    | '/mission-planner'
+    | '/scenario-simulator'
+  id:
+    | '__root__'
+    | '/'
+    | '/decision-log'
+    | '/energy-assets'
+    | '/forecast'
+    | '/mission-planner'
+    | '/scenario-simulator'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DecisionLogRoute: typeof DecisionLogRoute
+  EnergyAssetsRoute: typeof EnergyAssetsRoute
+  ForecastRoute: typeof ForecastRoute
+  MissionPlannerRoute: typeof MissionPlannerRoute
+  ScenarioSimulatorRoute: typeof ScenarioSimulatorRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +117,51 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/decision-log': {
+      id: '/decision-log'
+      path: '/decision-log'
+      fullPath: '/decision-log'
+      preLoaderRoute: typeof DecisionLogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/energy-assets': {
+      id: '/energy-assets'
+      path: '/energy-assets'
+      fullPath: '/energy-assets'
+      preLoaderRoute: typeof EnergyAssetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forecast': {
+      id: '/forecast'
+      path: '/forecast'
+      fullPath: '/forecast'
+      preLoaderRoute: typeof ForecastRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mission-planner': {
+      id: '/mission-planner'
+      path: '/mission-planner'
+      fullPath: '/mission-planner'
+      preLoaderRoute: typeof MissionPlannerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scenario-simulator': {
+      id: '/scenario-simulator'
+      path: '/scenario-simulator'
+      fullPath: '/scenario-simulator'
+      preLoaderRoute: typeof ScenarioSimulatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DecisionLogRoute: DecisionLogRoute,
+  EnergyAssetsRoute: EnergyAssetsRoute,
+  ForecastRoute: ForecastRoute,
+  MissionPlannerRoute: MissionPlannerRoute,
+  ScenarioSimulatorRoute: ScenarioSimulatorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
