@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MissionPlannerRouteImport } from './routes/mission-planner'
+import { Route as ScenarioSimulatorRouteImport } from './routes/scenario-simulator'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MissionPlannerRoute = MissionPlannerRouteImport.update({
+  id: '/mission-planner',
+  path: '/mission-planner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScenarioSimulatorRoute = ScenarioSimulatorRouteImport.update({
+  id: '/scenario-simulator',
+  path: '/scenario-simulator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/mission-planner': typeof MissionPlannerRoute
+  '/scenario-simulator': typeof ScenarioSimulatorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/mission-planner' | '/scenario-simulator'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/mission-planner' | '/scenario-simulator'
+  id: '__root__' | '/' | '/mission-planner' | '/scenario-simulator'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MissionPlannerRoute: typeof MissionPlannerRoute
+  ScenarioSimulatorRoute: typeof ScenarioSimulatorRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mission-planner': {
+      id: '/mission-planner'
+      path: '/mission-planner'
+      fullPath: '/mission-planner'
+      preLoaderRoute: typeof MissionPlannerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scenario-simulator': {
+      id: '/scenario-simulator'
+      path: '/scenario-simulator'
+      fullPath: '/scenario-simulator'
+      preLoaderRoute: typeof ScenarioSimulatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MissionPlannerRoute: MissionPlannerRoute,
+  ScenarioSimulatorRoute: ScenarioSimulatorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
