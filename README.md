@@ -2,9 +2,9 @@
 
 ## Mission-aware energy resilience for polar research stations
 
-FIRN is an operational intelligence system that coordinates scientific missions with the energy, weather, fuel, and infrastructure constraints of a remote polar station.
+FIRN is a mission-aware energy resilience system for polar research stations.
 
-It answers the operator's central question:
+It helps station operators reason about one connected question:
 
 > What can the station safely accomplish next, given the missions that matter, the energy available, the weather ahead, and the resources that must be protected?
 
@@ -12,17 +12,11 @@ FIRN connects mission planning and energy management in one operating view. It e
 
 ## Operating model
 
-```text
-MISSION REQUIREMENTS  ─┐
-ENERGY AVAILABILITY    ─┤
-WEATHER & UNCERTAINTY  ─┼──→  FIRN DECISION LAYER  ──→  OPERATING PLAN
-ASSET HEALTH           ─┤             │                    │
-FUEL & RESUPPLY        ─┘             ↓                    ↓
-                              RISK + EXPLANATION      OPERATOR REVIEW
-                                                           │
-                                                           ↓
-                                                     APPROVAL + ACTION
-```
+<p align="center">
+  <img src="docs/diagrams/image.png" alt="FIRN operating model: station inputs flow through the decision layer into operator-approved execution and significant-change replanning" width="100%" />
+</p>
+
+*Figure 1. FIRN connects station inputs, decision support, operator approval, execution monitoring, and adaptive replanning.*
 
 The operator remains in control. FIRN recommends, explains, and adapts; it does not silently activate a plan or control physical station equipment.
 
@@ -54,6 +48,8 @@ Plan state is explicit:
 ```text
 DRAFT → PROPOSED → APPROVED → ACTIVE → SUPERSEDED
 ```
+
+No proposed plan should become active without an operator action.
 
 ## Decision dimensions
 
@@ -102,6 +98,7 @@ src/
 ├── router.tsx         Router creation and application context
 ├── start.ts           Request middleware and application startup
 └── server.ts          SSR entry and server error handling
+public/                Static public assets
 ```
 
 The long-term separation is:
