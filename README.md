@@ -1230,18 +1230,6 @@ The most important screen is the Scenario Simulator because it proves FIRN's cor
 
 Make the prototype presentation-ready, polished, consistent and believable.
 
-This project was built with [Lovable](https://lovable.dev).
-
-**Live app**: https://firn-polar-ops.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/598d1904-00c7-5bc3-a16c-53098f353e76).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
 ## Development
 
 Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
