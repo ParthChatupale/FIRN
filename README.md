@@ -1,14 +1,17 @@
 # FIRN
 
-## Mission-aware energy resilience for polar research stations
+## Polar station operational intelligence
 
-FIRN is a mission-aware energy resilience system for polar research stations.
+FIRN is an interactive operating workspace for **Polar Station Alpha**. It brings the station's missions, energy position, weather risk, asset availability, and fuel reserve into one place so an operator can understand the current situation and decide what should happen next.
 
-It helps station operators reason about one connected question:
+When FIRN is opened, the operator can move through a connected station workflow rather than a collection of disconnected dashboards:
 
-> What can the station safely accomplish next, given the missions that matter, the energy available, the weather ahead, and the resources that must be protected?
-
-FIRN connects mission planning and energy management in one operating view. It evaluates conditions, identifies risk, recommends an operating plan, and explains the reasoning behind each decision.
+1. Inspect the current station state.
+2. Review missions and operating constraints.
+3. Explore energy, asset, weather, and fuel conditions.
+4. Select a disruption and see how the operating plan changes.
+5. Read the reasoning behind the recommendation.
+6. Compare the operating position before and after the change.
 
 ## Operating model
 
@@ -20,146 +23,99 @@ FIRN connects mission planning and energy management in one operating view. It e
 
 The operator remains in control. FIRN recommends, explains, and adapts; it does not silently activate a plan or control physical station equipment.
 
-## Workspace
+## The FIRN workspace
 
-| Area | Function |
-| --- | --- |
-| **Station Overview** | Current station condition, mission status, energy position, fuel reserve, weather risk, and operating recommendation |
-| **Mission Planner** | Mission priorities, deadlines, energy requirements, asset constraints, and schedule generation |
-| **Energy & Assets** | Renewable generation, battery state, generator availability, asset health, and operational constraints |
-| **Forecast & Risk** | Renewable generation, demand, battery trajectory, forecast confidence, and upcoming risk |
-| **Scenario Simulator** | Storm, generator failure, fuel delay, and low-battery conditions with adaptive plan responses |
-| **Decision Log** | The sequence of observations, assessments, actions, and explanations behind an operating decision |
+### Station Overview
 
-## The operating loop
+The landing screen presents the current operating picture:
 
-FIRN is organized around a rolling decision cycle:
+- renewable generation and station demand;
+- battery state and reserve position;
+- fuel reserve and estimated runway;
+- mission status and schedule health;
+- temperature, wind, visibility, and weather risk;
+- the current FIRN operating recommendation.
 
-1. **Sense** — establish the current station, mission, asset, weather, and fuel state.
-2. **Predict** — project demand, renewable availability, battery reserve, and operating risk.
-3. **Plan** — align mission timing with energy and infrastructure constraints.
-4. **Explain** — show the trade-offs, risks, and reasons behind the recommendation.
-5. **Review** — allow the operator to inspect and adjust the proposed plan.
-6. **Approve** — make the selected plan active through an explicit operator action.
-7. **Adapt** — respond to significant changes with a new plan version and comparison.
+The overview is designed to answer: **What is happening at the station, and does the operator need to act?**
 
-Plan state is explicit:
+### Mission Planner
 
-```text
-DRAFT → PROPOSED → APPROVED → ACTIVE → SUPERSEDED
-```
+The Mission Planner presents the station's scientific and operational mission queue. Each mission carries a priority, power requirement, duration, deadline, weather dependency, equipment requirement, interruptibility, and recommendation.
 
-No proposed plan should become active without an operator action.
+The planner can generate a simulated operating schedule that places missions around renewable availability, critical loads, asset constraints, and mission priority.
 
-## Decision dimensions
+### Energy & Assets
 
-FIRN brings five operational dimensions together:
+The Energy & Assets workspace shows the infrastructure FIRN is planning around:
 
-### Mission-aware
+- solar generation;
+- wind generation;
+- battery capacity and state of charge;
+- backup generators;
+- asset health and availability;
+- maintenance and operating constraints.
 
-Scientific activities are first-class planning objects with priority, duration, deadlines, energy demand, weather dependency, equipment, personnel, and flexibility.
+This makes it clear which assets are available to the operating plan and which are constrained or unavailable.
 
-### Energy-aware
+### Forecast & Risk
 
-Renewables, station demand, battery reserve, generator capacity, and critical loads are considered together rather than displayed as disconnected metrics.
+The Forecast workspace shows the next operating window for:
 
-### Fuel-aware
+- renewable generation;
+- station demand;
+- battery state of charge;
+- forecast confidence;
+- upcoming weather-driven risk.
 
-Finite fuel, consumption, reserve thresholds, and resupply timing influence which missions remain feasible.
+The forecast view makes the relationship between future conditions and mission timing visible.
 
-### Weather-aware
+### Scenario Simulator
 
-Weather affects both renewable generation and the safety or feasibility of field activity.
+The Scenario Simulator is the main interaction surface for changing station conditions. It provides selectable operating scenarios:
 
-### Human-in-the-loop
+- Normal Conditions;
+- Severe Storm;
+- Generator Failure;
+- Fuel Resupply Delay;
+- Low Battery Capacity.
 
-FIRN provides recommendations and explanations. The operator reviews, modifies, approves, and remains accountable for the active plan.
+Each scenario can be executed through the FastAPI simulation service. The interface displays the persisted run summary and hourly telemetry returned from PostgreSQL. The separate reference panels are illustrative; the current simulator executes a supplied schedule and baseline dispatch rather than optimizing or replanning missions.
 
-## Operating environment
+### Decision Log
 
-The current station environment is synthetic, deterministic, and local to the browser. This keeps the operating model reproducible while the planning experience is developed.
-
-The current system does not connect to live telemetry, real station infrastructure, external weather services, or a remote planning service. Synthetic values are intentionally identified as simulated wherever they appear in the interface.
-
-The frontend simulation is structured so that deterministic local planning functions can later be replaced by typed service calls without changing the operator-facing workflow.
-
-## System structure
+The Decision Log presents the chain behind an operating recommendation:
 
 ```text
-src/
-├── components/
-│   ├── firn/          Shared FIRN shell and product components
-│   └── ui/            Reusable interface primitives
-├── lib/
-│   ├── firn-data.ts   Station, mission, asset, scenario, forecast, and log data
-│   ├── firn-context.tsx
-│   └── error-*.ts     Runtime and server error handling
-├── routes/            TanStack Start workspace screens
-├── router.tsx         Router creation and application context
-├── start.ts           Request middleware and application startup
-└── server.ts          SSR entry and server error handling
-public/                Static public assets
+Observation → Forecast → Risk assessment → Operating decision → Explanation
 ```
 
-The long-term separation is:
+It gives the operator a readable history of why a simulated action was taken and which station conditions influenced it.
 
-```text
-Presentation
-    ↓
-Application workflow
-    ↓
-Planning and simulation services
-    ↓
-Domain models and constraints
-    ↓
-Station data and integrations
-```
+## Current operating environment
 
-Simulation and planning logic should remain independent of route components so the same domain behavior can power the overview, planner, monitoring, scenarios, and decision history.
+The screens currently use synthetic scenario state local to the browser. Alongside that interface, FIRN now includes a deterministic Python station simulation engine that runs hourly scenarios from explicit station, resource, weather, mission, and event inputs.
 
-## Future service boundary
+Neither the interface nor the simulation engine is connected to live station telemetry, real sensors, or external weather services. The engine is a reproducible operating model; it executes a supplied mission schedule and baseline dispatch policy. The Scenario Simulator is connected to a FastAPI/PostgreSQL persistence slice; its Phase 2 `simulation_runs` / `simulation_telemetry` migration is applied to the local `firn_db`. This is not the final FIRN operational database schema.
 
-The current application runs locally, but the product boundary is designed to support a backend when persistence, collaboration, and live integrations become necessary.
+The application is intentionally focused on making the operating workflow clear and believable. The planning experience can become more detailed over time without changing the operator-facing workspace.
 
-```text
-backend/
-├── api/              Planning, monitoring, scenarios, and plan lifecycle
-├── domain/           Mission, station, asset, fuel, risk, and plan models
-├── simulation/       Deterministic simulation and optimization services
-├── persistence/      Plans, history, users, and station state
-└── integrations/     Weather, telemetry, and external station systems
-```
-
-The future service layer should preserve the same contracts and principles:
-
-- mission and energy planning remain coupled;
-- critical loads are protected;
-- fuel cannot become negative;
-- battery state remains within physical limits;
-- hard weather, resource, and deadline constraints are respected;
-- significant changes create a new plan version;
-- historical plans remain immutable;
-- operators explicitly approve recommendations;
-- synthetic station data is never represented as live telemetry.
-
-## Technology
-
-- React 19
-- TypeScript
-- TanStack Start and TanStack Router
-- Tailwind CSS
-- Recharts
-- Lucide icons
-- Vite
-
-## Run locally
+## Run FIRN locally
 
 ### Requirements
 
 - Node.js 20 or newer
 - npm
+- Python 3.11 or newer
 
-### Start FIRN
+### Start the workspace
+
+Configure Python dependencies and local PostgreSQL credentials by following [docs/backend-setup.md](docs/backend-setup.md). Start the backend in one terminal from the repository root:
+
+```sh
+uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then start the frontend in another terminal:
 
 ```sh
 npm install
@@ -168,23 +124,49 @@ npm run dev
 
 Open the local URL printed by Vite.
 
-### Useful commands
+The Python API and PostgreSQL setup instructions are in [docs/backend-setup.md](docs/backend-setup.md).
+
+### Build and preview
 
 ```sh
-npm run build    # Build the application for production
-npm run preview  # Preview the production build
-npm run lint     # Run ESLint
+npm run build
+npm run preview
 ```
 
-## Product principles
+## Current experience
 
-FIRN should always feel like a specialized polar operations system rather than a generic dashboard.
+FIRN currently provides a connected station workspace with:
 
-- Protect critical station operations before flexible science activity.
-- Make every major recommendation understandable.
-- Show the relationship between mission timing and energy availability.
-- Preserve plan history instead of silently rewriting decisions.
-- Distinguish proposed, approved, active, and superseded plans.
-- Prefer deterministic, testable behavior over opaque automation.
-- Keep the operator in control of approval and execution.
-- Be precise about what is simulated and what is connected.
+- a shared station shell and navigation;
+- cross-screen scenario state;
+- mission, energy, asset, forecast, and decision views;
+- simulated recommendations and adaptive responses;
+- explainable decision dialogs;
+- responsive layouts for presentation and laptop use;
+- clear separation between station simulation and live infrastructure.
+
+The central experience is the transition from a stable operating plan to a changed condition, followed by FIRN's recommendation and the operator's review of what changed.
+
+## Run the station simulation
+
+The Python engine uses only the standard library and requires Python 3.11 or newer. From the repository root in WSL:
+
+```sh
+python3 -m backend.simulation.cli --scenario normal --days 30 --seed 42
+```
+
+Available scenarios are `normal`, `storm`, `generator_failure`, `resupply_delay`, and `mission_energy`. Write the complete hourly telemetry and event history to a JSON file with `--output`:
+
+```sh
+python3 -m backend.simulation.cli --scenario storm --days 30 --seed 42 --output output/storm-run.json
+```
+
+Run the simulation acceptance suite with:
+
+```sh
+python3 -m unittest discover -v
+```
+
+The engine records every hourly energy balance, load shed, critical-load violation, mission outcome, generator state, battery state, fuel movement, and scheduled event. Weather is generated from persistent, seeded regimes, so identical inputs produce identical output.
+
+Each step is one hour. The baseline dispatch serves renewable generation first, starts available generators for a deficit, draws from the battery above its protected reserve, and serves critical and essential station loads before missions and flexible demand. Excess generation charges the battery before curtailment. Any remaining shortfall is recorded explicitly. Missions are checked against weather, equipment, personnel, and non-electric fuel constraints; the engine does not move their scheduled times.
