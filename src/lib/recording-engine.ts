@@ -265,7 +265,8 @@ export function environmentalPoint(hour: number, inputs: ScenarioInputs, adverse
     windMs < 3 || windMs >= 20
       ? 0
       : STATION.windCapacity * Math.min(1, (windMs ** 3 - 3 ** 3) / (11 ** 3 - 3 ** 3));
-  const daylight = 0.2 + 0.8 * Math.max(0, Math.sin((((hour % 24) + 6) * Math.PI) / 12));
+  const dayHour = ((hour % 24) + 24) % 24;
+  const daylight = 0.2 + 0.8 * Math.max(0, Math.sin(((dayHour + 6) * Math.PI) / 12));
   const solarPower = STATION.solarCapacity * daylight * (1 - 0.85 * cloud) * 0.9;
   const temperature = -12 + 2 * Math.sin(hour / 5) - severity * 8;
   const stationDemand =

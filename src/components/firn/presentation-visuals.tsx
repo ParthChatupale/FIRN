@@ -87,6 +87,7 @@ export function Chart({
   event?: boolean | number;
 }) {
   const unit = mode === "power" ? "kW" : mode === "battery" ? "kWh" : "L";
+  const historical = (rows[0]?.hour ?? 0) < 0;
   return (
     <div
       className="studio-chart"
@@ -101,11 +102,11 @@ export function Chart({
             dataKey="hour"
             type="number"
             domain={["dataMin", "dataMax"]}
-            tickFormatter={(v) => `H${v}`}
+            tickFormatter={(v) => (historical ? stationTime(v).replace(" UTC", "") : `H${v}`)}
             tick={{ fill: "#91a7b5", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
-            minTickGap={36}
+            minTickGap={historical ? 65 : 36}
           />
           <YAxis
             tick={{ fill: "#91a7b5", fontSize: 10 }}
@@ -115,7 +116,7 @@ export function Chart({
             tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : String(v))}
           />
           <Tooltip
-            labelFormatter={(v) => `Operating hour H${v}`}
+            labelFormatter={(v) => (historical ? stationTime(Number(v)) : `Operating hour H${v}`)}
             formatter={(value: number, name: string) => [`${format(value, 1)} ${unit}`, name]}
             contentStyle={{
               background: "#11212d",
@@ -195,6 +196,14 @@ export function Chart({
               }}
             />
           )}
+          {historical && (
+            <ReferenceLine
+              x={0}
+              stroke="#91a7b5"
+              strokeDasharray="3 4"
+              label={{ value: "Case H0", fill: "#91a7b5", fontSize: 10, position: "insideTopLeft" }}
+            />
+          )}
           {event && (
             <ReferenceLine
               x={typeof event === "number" ? event : 24}
@@ -221,6 +230,7 @@ export function Chart({
   );
 }
 export function ValuesTable({ rows }: { rows: StationPoint[] }) {
+  const historical = (rows[0]?.hour ?? 0) < 0;
   return (
     <details className="studio-values">
       <summary>Inspect hourly values</summary>
@@ -229,7 +239,7 @@ export function ValuesTable({ rows }: { rows: StationPoint[] }) {
           <thead>
             <tr>
               {[
-                "Hour",
+                historical ? "Station time · UTC" : "Hour",
                 "Demand kW",
                 "Renewable kW",
                 "Diesel kW",
@@ -245,7 +255,7 @@ export function ValuesTable({ rows }: { rows: StationPoint[] }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.hour}>
-                <td>H{r.hour}</td>
+                <td>{historical ? stationTime(r.hour) : `H${r.hour}`}</td>
                 <td>{r.demand}</td>
                 <td>{r.renewable}</td>
                 <td>{r.generator}</td>

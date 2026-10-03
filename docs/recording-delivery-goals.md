@@ -24,8 +24,11 @@ Operations is situational awareness and attention. Monitoring is execution evide
 - [ ] Revised browser rehearsal: preparation timing, navigation, notification ordering, layout and responsive controls.
 - [x] Event-based minute playback, served-work lifecycle notifications, running/next/recent mission activity and full-case scene snapshots implemented and automatically tested.
 - [x] Configurable authorization/mobilization allowance with activation revalidation; lifecycle labels, mission legend/status and compact attention lists corrected.
+- [x] Final scoped addition: physically consistent 48h pre-H0 history, shared observed-data views, UTC timestamps and checkpoint boundary. Planning, playback, mission ledger and recording outcomes unchanged; history is inspection context, not forecast training data.
 - [ ] User-led verification of clickable clock, auto stops, scene restore, live mission progress and revised visuals.
 - [ ] Final user visual approval before filming.
+
+Historical continuity implementation and checks: [review](verification/historical-continuity/review.md).
 
 Automated results and the browser-access limitation are recorded in [verification](verification/rehearsal-corrections/review.md). Historical screenshots do not verify the revised workflow.
 

@@ -44,6 +44,7 @@ import {
   stationTime,
   stationHour,
   stationTrajectory,
+  observedHistory,
   STATION,
   type PlanKind,
 } from "@/lib/presentation-model";
@@ -81,7 +82,7 @@ function Operations() {
   const { state } = usePresentation();
   const [view, setView] = useState<"projection" | "observed">("projection");
   const c = currentStation(state);
-  const observed = stationTrajectory(state, state.activeKind, true, state.hour);
+  const observed = observedHistory(state);
   const projected = stationTrajectory(
     forecastCase(state),
     state.activeKind,
@@ -169,31 +170,19 @@ function Operations() {
               <span>
                 {view === "projection"
                   ? `V${state.activeVersion} projection · next 48h`
-                  : `Observed through H${state.hour}`}{" "}
+                  : `48h prior history · through ${stationTime(stationHour(state))}`}{" "}
                 · kW
               </span>
             </div>
-            {view === "observed" && state.hour === 0 ? (
-              <div className="studio-opening-state">
-                <Zap size={22} />
-                <strong>Opening observation · H0</strong>
-                <span>
-                  Renewables {format(c.renewable, 1)} + diesel {format(c.generator, 1)} + battery{" "}
-                  {format(c.discharge, 1)} kW
-                </span>
-                <Link to="/monitoring">Advance the operating clock →</Link>
-              </div>
-            ) : (
-              <Chart
-                rows={rows}
-                height={150}
-                event={
-                  forecastCase(state).inputs.weatherSeverity > 0 && view === "projection"
-                    ? forecastCase(state).inputs.weatherHour
-                    : false
-                }
-              />
-            )}
+            <Chart
+              rows={rows}
+              height={150}
+              event={
+                forecastCase(state).inputs.weatherSeverity > 0 && view === "projection"
+                  ? forecastCase(state).inputs.weatherHour
+                  : false
+              }
+            />
           </Panel>
           <div className="studio-small-multiples">
             <Panel title="Battery reserve" meta={<span className="studio-unit">kWh</span>}>
@@ -718,13 +707,13 @@ function ScenarioLab() {
 
 function Monitor() {
   const { state, dispatch } = usePresentation();
-  const observed = stationTrajectory(state, state.activeKind, true, state.hour);
+  const observed = observedHistory(state);
   const reference = monitoringReference(state);
   const c = currentStation(state);
-  const points = observed.map((r, i) => ({
+  const points = observed.map((r) => ({
     hour: r.hour,
     observed: r.g1,
-    expected: (reference[i] ?? reference.at(-1))!.g1,
+    expected: r.hour < 0 ? null : (reference[Math.floor(r.hour)] ?? reference.at(-1))!.g1,
   }));
   const paused =
     !!state.proposal ||
@@ -876,13 +865,7 @@ function Monitor() {
             title="Generator 01 · observed vs pre-event reference"
             meta={<span className="studio-unit">kW</span>}
           >
-            {state.hour === 0 ? (
-              <div className="studio-opening-state">
-                <Activity size={25} />
-                <strong>Opening observation ready</strong>
-                <span>Advance to develop actual-versus-reference traces.</span>
-              </div>
-            ) : (
+            {
               <div
                 className="studio-deviation-chart"
                 role="img"
@@ -894,13 +877,14 @@ function Monitor() {
                     <XAxis
                       dataKey="hour"
                       type="number"
-                      domain={[0, Math.max(state.hour, 6)]}
-                      tickFormatter={(h) => `H${h}`}
+                      domain={["dataMin", "dataMax"]}
+                      tickFormatter={(h) => stationTime(h).replace(" UTC", "")}
                       tick={{ fill: "#91a7b5", fontSize: 11 }}
+                      minTickGap={65}
                     />
                     <YAxis tick={{ fill: "#91a7b5", fontSize: 11 }} />
                     <Tooltip
-                      labelFormatter={(v) => `H${v} · kW`}
+                      labelFormatter={(v) => `${stationTime(Number(v))} · kW`}
                       contentStyle={{ background: "#11212d", borderColor: "#34505e", fontSize: 12 }}
                     />
                     <Line
@@ -916,8 +900,14 @@ function Monitor() {
                       name="Observed output"
                       stroke="#55d3e4"
                       strokeWidth={2}
-                      dot={state.hour < 2}
+                      dot={false}
                       isAnimationActive={false}
+                    />
+                    <ReferenceLine
+                      x={0}
+                      stroke="#91a7b5"
+                      strokeDasharray="3 4"
+                      label={{ value: "Case H0", fill: "#91a7b5", fontSize: 10 }}
                     />
                     {state.hour >= 26 && (
                       <ReferenceLine
@@ -930,7 +920,10 @@ function Monitor() {
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-            )}
+            }
+            <small className="studio-footnote">
+              48h prior station operation · issued-plan reference starts at H0.
+            </small>
           </Panel>
           <div className="studio-small-multiples">
             <Panel title="Observed battery" meta={<span className="studio-unit">kWh</span>}>

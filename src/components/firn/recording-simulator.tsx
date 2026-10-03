@@ -21,6 +21,8 @@ import {
   planAssessment,
   stationTrajectory,
   stationTime,
+  stationHour,
+  observedHistory,
   STATION,
   RECORDING_INPUTS,
   BASE_INPUTS,
@@ -49,7 +51,7 @@ export function RecordingSimulator() {
   const selected = basis === "preview" ? preview : forecastCase(state);
   const rows =
     basis === "observed"
-      ? state.observations
+      ? observedHistory(state)
       : stationTrajectory(selected, state.activeKind, false, Math.max(state.hour, horizon));
   const weather = rows.map((p) => ({
     hour: p.hour,
@@ -100,7 +102,7 @@ export function RecordingSimulator() {
       <div className="recording-current-strip">
         <div>
           <small>COASTAL SUMMER / ALPHA</small>
-          <strong>{stationTime(state.hour)}</strong>
+          <strong>{stationTime(stationHour(state))}</strong>
           <span>Current observations · V{state.activeVersion}</span>
         </div>
         <div>
@@ -194,26 +196,20 @@ export function RecordingSimulator() {
               </strong>
               <span>
                 {basis === "observed"
-                  ? `Through H${state.hour}`
+                  ? `48h prior history · through ${stationTime(stationHour(state))}`
                   : `Assumptions ${state.assumptionVersion}${edited && basis === "preview" ? " / draft" : ""}`}
               </span>
             </div>
             {view === "power" ? (
-              basis === "observed" && state.hour === 0 ? (
-                <div className="studio-opening-state">
-                  <Zap size={22} />
-                  <strong>One opening observation</strong>
-                  <span>
-                    Use input preview for the future horizon; advance the clock to record history.
-                  </span>
-                </div>
-              ) : (
-                <Chart
-                  rows={rows}
-                  height={245}
-                  event={selected.inputs.weatherSeverity > 0 ? selected.inputs.weatherHour : false}
-                />
-              )
+              <Chart
+                rows={rows}
+                height={245}
+                event={
+                  basis !== "observed" && selected.inputs.weatherSeverity > 0
+                    ? selected.inputs.weatherHour
+                    : false
+                }
+              />
             ) : view === "weather" ? (
               <>
                 {basis !== "observed" && (
@@ -238,8 +234,11 @@ export function RecordingSimulator() {
                         dataKey="hour"
                         type="number"
                         domain={["dataMin", "dataMax"]}
-                        tickFormatter={(h) => `H${h}`}
+                        tickFormatter={(h) =>
+                          basis === "observed" ? stationTime(h).replace(" UTC", "") : `H${h}`
+                        }
                         tick={{ fill: "#91a7b5", fontSize: 10 }}
+                        minTickGap={65}
                       />
                       <YAxis
                         yAxisId="wind"
@@ -252,7 +251,19 @@ export function RecordingSimulator() {
                         domain={[-25, 0]}
                         tick={{ fill: "#c9b4ff", fontSize: 10 }}
                       />
-                      <Tooltip contentStyle={{ background: "#11212d", borderColor: "#34505e" }} />
+                      <Tooltip
+                        labelFormatter={(h) => stationTime(Number(h))}
+                        contentStyle={{ background: "#11212d", borderColor: "#34505e" }}
+                      />
+                      {basis === "observed" && (
+                        <ReferenceLine
+                          yAxisId="wind"
+                          x={0}
+                          stroke="#91a7b5"
+                          strokeDasharray="3 4"
+                          label={{ value: "Case H0", fill: "#91a7b5", fontSize: 10 }}
+                        />
+                      )}
                       <Line
                         yAxisId="wind"
                         dataKey="wind"
@@ -299,7 +310,11 @@ export function RecordingSimulator() {
                 Wind {STATION.windCapacity} kW · solar {STATION.solarCapacity} kW · diesel{" "}
                 {c.g1Capacity + STATION.generatorTwo} kW
               </span>
-              <span>Preview does not activate a plan</span>
+              <span>
+                {basis === "observed"
+                  ? "Prior operation + recorded execution; not forecast training data"
+                  : "Preview does not activate a plan"}
+              </span>
             </div>
           </Panel>
           <div className="recording-impact-grid">

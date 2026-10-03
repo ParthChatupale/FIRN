@@ -110,6 +110,13 @@ const result = {
   preparationPacing: w.PREPARATION_MS,
   case: "Fictional coastal summer station / Alpha",
   config: m.STATION,
+  historicalBasis: {
+    source: "Deterministic pre-case station operation; not hardware telemetry or forecast training",
+    hours: m.HISTORY_HOURS,
+    start: m.stationTime(-m.HISTORY_HOURS),
+    end: m.stationTime(0),
+    intervals: m.preCaseHistory(),
+  },
   checkpoints,
 };
 const outputFlag = process.argv.indexOf("--output");

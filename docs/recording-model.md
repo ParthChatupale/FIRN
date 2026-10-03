@@ -27,6 +27,35 @@ Solar availability uses a stylized summer daylight factor, cloud attenuation and
 
 ## What actually evolves
 
+### Prior operation at the opening checkpoint
+
+`src/lib/recording-history.ts` generates 48 hourly intervals from **13 January 2026,
+06:00 UTC to 15 January, 06:00 UTC**. H0 is the start of the demonstration case, not
+the station's first-ever reading. Historical weather uses baseline forcing only;
+future storm, logistics revisions and upcoming demonstration missions do not repaint it.
+
+Routine storage dispatch tracks an authored daily buffer target of `312 + 36 ×
+sin(hour × π / 12)` kWh, within the same reserve/capacity, 25/30 kW charging/discharging
+limits and 94% directional efficiency. This is a modeled operating policy, not a
+measured or optimized historic station strategy. Power supply is balanced for every
+interval; actual inventories are integrated from dispatch, not drawn as independent
+curves. Earlier fuel is sized as `1,650 L + summed historical generator consumption`.
+The final interval closes at **312 kWh and 1,650 L**, with no reset/jump in inventory.
+The H0 case controller may choose different flows for the next interval.
+
+These generated readings are **inspection context, not forecast training data**.
+Current resources plus supplied future assumptions remain the planning basis.
+Pre-case readings are kept outside the indexed mission-execution observations and
+ledger; they cannot complete future missions, create false approvals, or change the
+V2/V3 outcomes. A shared history selector combines negative-hour intervals and
+recorded execution, including the current fractional-minute point, without duplicating
+H0. Operations → Observed, Simulator → Observed history (Power/Weather/Resources),
+and Monitoring expose this evidence using UTC dates and a Case H0 marker. Issued-plan
+references begin at H0; no hypothetical plan reference is invented for earlier history.
+
+History is derived deterministically, so existing browser saves and scene snapshots
+can show it without migrations, backend writes, or resetting the current case.
+
 Each point H contains opening battery/fuel inventory and the flows during interval [H,H+1). Resources advance using the previous interval, not the next interval's dispatch:
 
 ```text
@@ -76,15 +105,15 @@ The fifteen-checkpoint export includes applied and published inputs, preparation
 
 Schema 4 also exports playback state, minute position, served mission-minute credits and the planning lead allowance. This branch now queues seven records by H48 during modeled link loss, including sample preservation start/completion; its physical outcome remains unchanged.
 
-| Checkpoint                   | Active plan     | Opening battery / fuel | Nominal fuel before delivery |
-| ---------------------------- | --------------- | ---------------------- | ---------------------------- |
-| Baseline / H0                | V1 original     | 312 kWh / 1,650 L      | 1,403 L                      |
-| Revised forecast ready / H0  | V1 unchanged    | 312 kWh / 1,650 L      | 856 L                        |
-| Joint authorization / H0     | V2 weather      | 312 kWh / 1,650 L      | 805 L                        |
-| Weather observed / H24       | V2              | 340 kWh / 1,526 L      | 805 L                        |
-| Independent derating / H26   | V2; assess first| 340 kWh / 1,498 L      | 740 L                        |
-| Adaptive authorization / H26 | V3              | 340 kWh / 1,498 L      | 765 L                        |
-| Continuation / H48           | V3              | 240 kWh / 1,170 L      | 765 L                        |
+| Checkpoint                   | Active plan      | Opening battery / fuel | Nominal fuel before delivery |
+| ---------------------------- | ---------------- | ---------------------- | ---------------------------- |
+| Baseline / H0                | V1 original      | 312 kWh / 1,650 L      | 1,403 L                      |
+| Revised forecast ready / H0  | V1 unchanged     | 312 kWh / 1,650 L      | 856 L                        |
+| Joint authorization / H0     | V2 weather       | 312 kWh / 1,650 L      | 805 L                        |
+| Weather observed / H24       | V2               | 340 kWh / 1,526 L      | 805 L                        |
+| Independent derating / H26   | V2; assess first | 340 kWh / 1,498 L      | 740 L                        |
+| Adaptive authorization / H26 | V3               | 340 kWh / 1,498 L      | 765 L                        |
+| Continuation / H48           | V3               | 240 kWh / 1,170 L      | 765 L                        |
 
 Original schedule has two actual shared-team overlaps. Joint retains all six baseline missions without those overlaps; energy-first defers two. Joint uses more fuel than the original in this case because its dispatch preserves more battery margin; do not narrate a universal fuel-saving advantage. Revised weather shifts field sampling H8→H7. The severe derating branch defers calibration, moves sample preservation to H32 and ends with five completed / one deferred mission and no nominal unserved intervals. Adverse assessment remains above configured reserves, but margins are narrow; this is conditional on these assumptions.
 

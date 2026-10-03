@@ -14,11 +14,13 @@ The panel automatically saves paused storyboard snapshots and supports named man
 
 ## 1 — Hook: enough energy is not enough
 
-**Action:** Operations at H0 / active original plan V1. Indicate current power, reserve, fuel, resupply and mission windows without reading every metric.
+**Action:** Operations at H0 / active original plan V1. Briefly select **Observed** to show the preceding 48 hours, then return to **Plan outlook**. Indicate current power, reserve, fuel, resupply and mission windows without reading every metric.
+
+> We have paused an ongoing station simulation at this operating point. The observed view shows earlier station operation; the outlook shows what lies ahead under the current assumptions. We will resume execution after reviewing the planning response.
 
 > A polar station can have enough energy to keep its lights on—and still lose its mission. A field team needs a usable weather window. Laboratory work needs equipment and power. Essential services cannot simply be switched off, and fuel has to last until resupply. These are not separate decisions. FIRN brings them into one operating picture.
 
-Opening resources: **312 kWh / 1,650 L**. Operations is the dashboard and attention queue, not a second approval screen.
+Opening resources: **312 kWh / 1,650 L**. The 48h modeled historical intervals close at those inventories. Do not describe them as live telemetry or training data for a learned forecast. Operations is the dashboard and attention queue, not a second approval screen.
 
 ## 2 — Introduce planning before requesting a response
 
@@ -30,7 +32,7 @@ Two upcoming instrument-team overlaps belong to V1. Joint comparison results mus
 
 ## 3 — Establish the station case
 
-**Action:** Scenario Simulator. Show current-state slab and weather or resource visualization. Verify **+0 additional delay / baseline weather**. Leave the draft unapplied.
+**Action:** Scenario Simulator. Show current-state slab and weather or resource visualization. Observed history includes the preceding station operation and execution up to the paused point; Applied outlook shows future assumptions. Verify **+0 additional delay / baseline weather**. Leave the draft unapplied.
 
 > These views share the same station case: weather, generation, demand, storage and mission commitments on one clock. We can preview a future condition without changing current readings or silently replacing the active plan.
 

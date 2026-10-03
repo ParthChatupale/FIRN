@@ -256,6 +256,15 @@ export function PresentationShell() {
                   </div>
                 ))}
                 <div className="studio-note">
+                  <strong>Operating history</strong>
+                  <p>
+                    The preceding 48 hours are generated station operation ending at the H0 battery
+                    and fuel inventories. History is available for inspection; outlooks use current
+                    state and supplied scenario assumptions, not a model trained on these historical
+                    readings.
+                  </p>
+                </div>
+                <div className="studio-note">
                   <strong>Sensor-network integration</strong>
                   <p>
                     Adapter-based integration is the intended hardware pathway. Physical sensor
