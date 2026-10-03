@@ -14,6 +14,7 @@ import {
   restoreWorkflow,
   WORKFLOW_KEY,
   PREPARATION_MS,
+  validSceneSnapshot,
   type WorkflowState,
   type WorkflowAction,
 } from "./recording-workflow";
@@ -101,6 +102,99 @@ function StateProvider({
     [],
   );
   const [storageWarning, setWarning] = useState(warning);
+  const [scenes, setScenes] = useState<{ id: string; name: string; snapshot: WorkflowState }[]>([]);
+  const [scenesReady, setScenesReady] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("firn:rehearsal:scenes:v1") ?? "[]");
+      if (Array.isArray(saved))
+        setScenes(
+          saved
+            .filter(
+              (item) =>
+                typeof item?.id === "string" &&
+                typeof item?.name === "string" &&
+                validSceneSnapshot(item.snapshot),
+            )
+            .slice(-24),
+        );
+    } catch {
+      setWarning(true);
+    }
+    setScenesReady(true);
+  }, []);
+  useEffect(() => {
+    if (!scenesReady) return;
+    try {
+      localStorage.setItem("firn:rehearsal:scenes:v1", JSON.stringify(scenes));
+    } catch {
+      setWarning(true);
+    }
+  }, [scenes, scenesReady]);
+  const saveScene = useCallback((name: string) => {
+    const snapshot = currentState.current;
+    if (snapshot.preparation || snapshot.failedPreparation || !name.trim()) return;
+    const copy = JSON.parse(
+      JSON.stringify({ ...snapshot, playback: { ...snapshot.playback, running: false } }),
+    ) as WorkflowState;
+    setScenes((items) =>
+      [
+        ...items.filter((item) => item.name !== name.trim()),
+        {
+          id: `scene-${Date.now()}-${snapshot.sequence}`,
+          name: name.trim().slice(0, 80),
+          snapshot: copy,
+        },
+      ].slice(-24),
+    );
+  }, []);
+  const restoreScene = useCallback(
+    (id: string) => {
+      const item = scenes.find((scene) => scene.id === id);
+      if (item)
+        dispatch({ type: "restore-scene", snapshot: JSON.parse(JSON.stringify(item.snapshot)) });
+    },
+    [scenes, dispatch],
+  );
+  const removeScene = useCallback(
+    (id: string) => setScenes((items) => items.filter((item) => item.id !== id)),
+    [],
+  );
+  const lastCheckpoint = useRef("");
+  useEffect(() => {
+    if (!scenesReady || state.playback.running || state.preparation || state.failedPreparation)
+      return;
+    const name = state.playback.reason;
+    if (
+      ![
+        "Baseline / planning",
+        "forecast ready",
+        "plan ready",
+        "assessment ready",
+        "Weather checkpoint",
+        "Weather observed",
+        "Asset checkpoint",
+        "Outcome checkpoint H48",
+      ].includes(name) &&
+      !name.startsWith("Plan V")
+    )
+      return;
+    const key = `${name}-${state.activeVersion}-${state.assumptionVersion}-${state.proposal?.version ?? 0}-${state.hour}`;
+    if (lastCheckpoint.current === key) return;
+    lastCheckpoint.current = key;
+    saveScene(`${name} · V${state.proposal?.version ?? state.activeVersion} · H${state.hour}`);
+  }, [state, scenesReady, saveScene]);
+  useEffect(() => {
+    if (!enabled || !state.playback.running) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        dispatch({ type: "toggle-playback" });
+        return;
+      }
+      dispatch({ type: "tick", minutes: currentState.current.playback.rate });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled, state.playback.running, dispatch]);
   useEffect(() => {
     const task = state.preparation;
     if (!task) return;
@@ -128,7 +222,19 @@ function StateProvider({
     }
   }, [state]);
   return (
-    <PresentationContext.Provider value={{ state, dispatch, enabled, ready: true, storageWarning }}>
+    <PresentationContext.Provider
+      value={{
+        state,
+        dispatch,
+        enabled,
+        ready: true,
+        storageWarning,
+        scenes,
+        saveScene,
+        restoreScene,
+        removeScene,
+      }}
+    >
       {children}
     </PresentationContext.Provider>
   );

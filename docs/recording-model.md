@@ -44,6 +44,14 @@ Future environmental assumptions and observed events are separate. Preview/apply
 
 ## Preparation, publication and attention
 
+Event-driven playback adds minute integration of constant hourly forcing/dispatch. A minute consumes 1/60 of that interval’s flows and credits only supplied running mission work. Hourly weather/forecast resolution is retained: this is not a new minute-resolution weather model. At hour boundaries, inventory becomes the next hourly opening; mid-hour activation preserves live inventory and starts a new dispatch segment. The observed charts append the live fractional-time point without rewriting earlier hourly snapshots.
+
+Playback has explicit 1/6/30 station-minutes-per-second rates, never catches up to wall time, and pauses on reload/scene restore or backgrounding. The [event checkpoint map](event-playback-plan.md) controls rehearsal stops. Baseline scenes remain at H0 until authorization. Saved scenes include inputs, inventory, mission-minute credits, records, attention, proposals, connection clocks and plans; they restore paused and invalidate older pending-task tokens.
+
+Mission start/completion records are emitted once. Completion timestamps come from supplied work, not scheduled finish alone; a jump across several hours still emits separate H10/H14/H18/H22 completions. Ordinary completions do not pause playback. Late/blocked work remains incomplete. Legacy hourly state remains readable; new recordings should reset once to start with the updated ledger.
+
+New work has a 30-minute authorization/mobilization allowance by default, selectable 15/30/60/120 in rehearsal controls. Integer scheduling uses the next suitable hour after that allowance. Ongoing/completed work is preserved; authorization rechecks input basis and remaining lead time. This is an illustrative configurable operational allowance, not a station-certified universal requirement.
+
 `src/lib/recording-workflow.ts` wraps the pure interval model with shared lifecycle state. Proposal generation has a 2.5-second minimum visible interval, forecast publication 1 second, and asset assessment 1.2 seconds. These are configurable presentation pacing, not measured backend performance. UI elapsed time does not advance station time. Input receipt precedes forecast readiness; generator observation precedes assessment. No joint result/comparison is published before an explicit Generate request completes. Previously published forecast inputs remain visible during refresh.
 
 Input changes and reset invalidate pending work; completion tokens bind results to their input basis and station hour. Failed/interrupted work supports retry. Notifications carry stable IDs, sequencing, station time, input basis and relevant plan version. Acknowledgement marks seen, not resolved or approved. Conditions use remaining conflicts and actual weather thresholds; event history retains prior notices. Authorization controls exist only in Mission Planner.
@@ -65,6 +73,8 @@ node --experimental-strip-types scripts/export-recording-case.mjs --output docs/
 ```
 
 The fifteen-checkpoint export includes applied and published inputs, preparation, attention, current state, schedule, proposal/limits, full observed prefix, projected hourly slab, environmental outlook, decision lineage and connection clocks. Completion intervals are supplied logically by the exporter; this is not a browser timing test. UI values are not copied from an unrelated spreadsheet.
+
+Schema 4 also exports playback state, minute position, served mission-minute credits and the planning lead allowance. This branch now queues seven records by H48 during modeled link loss, including sample preservation start/completion; its physical outcome remains unchanged.
 
 | Checkpoint                   | Active plan     | Opening battery / fuel | Nominal fuel before delivery |
 | ---------------------------- | --------------- | ---------------------- | ---------------------------- |

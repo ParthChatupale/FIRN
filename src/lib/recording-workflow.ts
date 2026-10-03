@@ -10,6 +10,11 @@ import {
   stationTime,
   STATION,
   validInputs,
+  stationHour,
+  stepStationMinute,
+  missionProgress,
+  missionServedMinutes,
+  missionCompletionHour,
   type ScenarioInputs,
   type PresentationState,
   type PresentationAction,
@@ -26,6 +31,7 @@ export type Attention = {
   priority: "advisory" | "caution" | "warning" | "critical";
   scope: "planning" | "forecast" | "monitoring" | "connection";
   hour: number;
+  minute?: number;
   receivedAt: string | null;
   sequence: number;
   basis: number;
@@ -47,6 +53,7 @@ export type WorkflowState = PresentationState & {
   readyInputs: ScenarioInputs;
   responseRequired: boolean;
   attention: Attention[];
+  playback: { running: boolean; rate: 1 | 6 | 30; reason: string };
 };
 export type WorkflowAction = (
   | PresentationAction
@@ -54,6 +61,12 @@ export type WorkflowAction = (
   | { type: "fail-task"; token: number }
   | { type: "ack-attention"; id: string }
   | { type: "retry-task" }
+  | { type: "toggle-playback" }
+  | { type: "set-playback-rate"; rate: 1 | 6 | 30 }
+  | { type: "tick"; minutes: number }
+  | { type: "advance-minutes"; minutes: number }
+  | { type: "set-lead-time"; minutes: number }
+  | { type: "restore-scene"; snapshot: unknown }
 ) & { receivedAt?: string };
 
 type Notice = Pick<
@@ -78,6 +91,7 @@ function notice(
         id: `attention-${sequence}`,
         sequence,
         hour: s.hour,
+        minute: s.minute ?? 0,
         receivedAt: a.receivedAt ?? null,
         basis: s.assumptionVersion,
         planVersion:
@@ -224,6 +238,13 @@ export function initializeWorkflow(base = initialPresentation()): WorkflowState 
   return reconcile(
     {
       ...base,
+      minute: base.minute ?? 0,
+      planningLeadMinutes: base.planningLeadMinutes ?? 30,
+      playback: {
+        running: false,
+        rate: 6,
+        reason: base.hour === 0 ? "Baseline / planning" : "Restored case",
+      },
       workflow: 1,
       failedPreparation: null,
       sequence: 0,
@@ -272,6 +293,8 @@ export function restoreWorkflow(raw: unknown): WorkflowState {
         typeof n.acknowledged !== "boolean" ||
         typeof n.condition !== "boolean" ||
         !Number.isInteger(n.hour) ||
+        (n.minute !== undefined &&
+          (!Number.isInteger(n.minute) || n.minute < 0 || n.minute > 59)) ||
         n.hour < 0 ||
         n.hour > base.hour ||
         !Number.isSafeInteger(n.sequence) ||
@@ -286,6 +309,12 @@ export function restoreWorkflow(raw: unknown): WorkflowState {
     return initializeWorkflow(base);
   let restored: WorkflowState = {
     ...base,
+    playback: {
+      running: false,
+      rate: [1, 6, 30].includes(value.playback?.rate ?? 0) ? value.playback!.rate : 6,
+      reason: "Restored case",
+    },
+    planningLeadMinutes: base.planningLeadMinutes ?? 30,
     workflow: 1,
     sequence: value.sequence!,
     preparation: null,
@@ -319,6 +348,7 @@ function start(s: WorkflowState, kind: PreparationKind): WorkflowState {
   const sequence = s.sequence + 1;
   return {
     ...s,
+    playback: { ...s.playback, running: false, reason: `${kind} preparation` },
     failedPreparation: null,
     sequence,
     preparation: { token: sequence, kind, basis: s.assumptionVersion, hour: s.hour },
@@ -326,6 +356,53 @@ function start(s: WorkflowState, kind: PreparationKind): WorkflowState {
 }
 export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowState {
   if (a.type === "reset") return { ...initializeWorkflow(), sequence: s.sequence + 100 };
+  if (a.type === "restore-scene") {
+    if (!validSceneSnapshot(a.snapshot)) return s;
+    const restored = restoreWorkflow(a.snapshot);
+    return {
+      ...restored,
+      sequence: Math.max(s.sequence, restored.sequence) + 100,
+      playback: { ...restored.playback, running: false, reason: "Scene restored" },
+    };
+  }
+  if (a.type === "set-lead-time") {
+    if (
+      s.preparation ||
+      s.proposal ||
+      !Number.isInteger(a.minutes) ||
+      a.minutes < 15 ||
+      a.minutes > 120
+    )
+      return s;
+    return { ...s, planningLeadMinutes: a.minutes };
+  }
+  if (a.type === "set-playback-rate")
+    return [1, 6, 30].includes(a.rate) ? { ...s, playback: { ...s.playback, rate: a.rate } } : s;
+  if (a.type === "toggle-playback") {
+    if (s.playback.running)
+      return { ...s, playback: { ...s.playback, running: false, reason: "Operator pause" } };
+    const blocked = playbackBlock(s);
+    return {
+      ...s,
+      playback: { ...s.playback, running: !blocked, reason: blocked || "Execution running" },
+    };
+  }
+  if (a.type === "tick" || a.type === "advance-minutes" || a.type === "advance") {
+    if (a.type === "tick" && !s.playback.running) return s;
+    const minutes = a.type === "advance" ? a.hours * 60 : a.minutes;
+    if (
+      !Number.isInteger(minutes) ||
+      minutes < 1 ||
+      minutes > 2880 ||
+      s.proposal ||
+      s.preparation ||
+      s.failedPreparation ||
+      s.responseRequired ||
+      s.hour >= 48
+    )
+      return s;
+    return advanceExecution(s, minutes, a);
+  }
   if (a.type === "ack-attention") {
     if (!s.attention.some((n) => n.id === a.id && !n.acknowledged)) return s;
     return {
@@ -364,7 +441,11 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
       a.elapsedMs < PREPARATION_MS[task.kind]
     )
       return s;
-    let next: WorkflowState = { ...s, preparation: null };
+    let next: WorkflowState = {
+      ...s,
+      preparation: null,
+      playback: { ...s.playback, running: false, reason: `${task.kind} ready` },
+    };
     if (task.kind === "plan") {
       next = { ...next, ...presentationReducer(next, { type: "generate" }), comparisonReady: true };
       const feasible = next.proposal?.feasible;
@@ -434,7 +515,6 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
     }
     return reconcile(next, a);
   }
-  if (a.type === "advance" && s.responseRequired) return s;
   if (a.type === "generate") {
     if (
       s.preparation ||
@@ -458,6 +538,30 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
     ].includes(a.type)
   )
     return s;
+  if ((a.type === "approve" || a.type === "activate") && s.proposal) {
+    const problem = authorizationProblem(s);
+    if (problem)
+      return notice(
+        {
+          ...s,
+          proposal: {
+            ...s.proposal,
+            feasible: false,
+            problems: [...new Set([...s.proposal.problems, problem])],
+          },
+        },
+        {
+          key: `stale-${s.proposal.version}`,
+          title: "Proposal requires revision",
+          detail: problem,
+          priority: "warning",
+          scope: "planning",
+          route: "/mission-planner",
+          action: "Reject and regenerate response",
+        },
+        a,
+      );
+  }
   const base = presentationReducer(s, a);
   if (base === s) return s;
   let next: WorkflowState = { ...s, ...base };
@@ -477,7 +581,7 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
       {
         key: `inputs-${next.assumptionVersion}`,
         title: "Future inputs applied",
-        detail: `Additional delay +${next.inputs.resupplyDelay} days; revised arrival ${stationTime(STATION.resupplyHour + next.inputs.resupplyDelay * 24)}. Forecast refresh preparing.`,
+        detail: `Additional delay +${next.inputs.resupplyDelay} days; revised arrival ${stationTime(STATION.resupplyHour + next.inputs.resupplyDelay * 24)}. Input receipt recorded.`,
         priority: "advisory",
         scope: "forecast",
         route: "/forecast",
@@ -518,6 +622,20 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
       },
       a,
     );
+  if (["observe-weather", "review", "approve", "reject", "activate"].includes(a.type))
+    next = {
+      ...next,
+      playback: {
+        ...next.playback,
+        running: false,
+        reason:
+          a.type === "activate"
+            ? `Plan V${next.activeVersion} activated`
+            : a.type === "observe-weather"
+              ? "Weather observed"
+              : "Operator decision",
+      },
+    };
   if (a.type === "activate") {
     next = {
       ...next,
@@ -550,7 +668,6 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
         n.key.startsWith("proposal-") ? { ...n, active: false } : n,
       ),
     };
-  if (a.type === "advance") next = { ...next, comparisonReady: false };
   if (["uplink", "receive-forecast", "synchronize"].includes(a.type))
     next = notice(
       next,
@@ -593,4 +710,150 @@ export function forecastCase(s: WorkflowState): PresentationState {
         inputs: s.readyInputs,
         outlookChanged: s.readyInputs.resupplyDelay > 0 || s.readyInputs.weatherSeverity > 0,
       };
+}
+export function authorizationProblem(s: WorkflowState): string | null {
+  const p = s.proposal;
+  if (!p) return null;
+  if (p.basis !== s.assumptionVersion)
+    return "Proposal input basis is stale; regenerate before authorization";
+  const earliest = stationHour(s) + (p.leadMinutes ?? s.planningLeadMinutes ?? 30) / 60;
+  const late = p.schedule.find(
+    (m) =>
+      !m.deferred &&
+      missionProgress(s, m) !== "Completed" &&
+      !currentStation(s).runningMissions.includes(m.id) &&
+      m.start < earliest,
+  );
+  return late
+    ? `${late.short} no longer has the required authorization/mobilization margin; regenerate`
+    : null;
+}
+export function validSceneSnapshot(raw: unknown): raw is WorkflowState {
+  if (!raw || restorePresentation(raw) !== raw) return false;
+  const v = raw as WorkflowState;
+  if (
+    v.workflow !== 1 ||
+    v.preparation ||
+    v.failedPreparation ||
+    !v.playback ||
+    ![1, 6, 30].includes(v.playback.rate)
+  )
+    return false;
+  const restored = restoreWorkflow(v);
+  return (
+    restored.sequence === v.sequence &&
+    restored.forecastReadyBasis === v.forecastReadyBasis &&
+    JSON.stringify(restored.attention) === JSON.stringify(v.attention)
+  );
+}
+export function playbackBlock(s: WorkflowState): string | null {
+  if (s.hour >= 48) return "Outcome checkpoint H48";
+  if (s.preparation || s.failedPreparation) return "Preparation / retry required";
+  if (s.proposal) return "Proposal awaiting decision";
+  if (s.responseRequired) return "Planning response required";
+  if (s.activeVersion === 1) return "Baseline planning — activate a plan before playback";
+  if (s.inputs.weatherSeverity > 0 && !s.observedWeather && s.hour >= s.inputs.weatherHour)
+    return "Weather checkpoint — record observation";
+  if (s.outlookChanged && !s.generatorEvent && s.hour >= 26)
+    return "Asset checkpoint — record disturbance";
+  return null;
+}
+function advanceExecution(s: WorkflowState, minutes: number, a: WorkflowAction): WorkflowState {
+  let next = s;
+  for (let i = 0; i < minutes; i++) {
+    if (
+      next.hour >= 48 ||
+      (next.inputs.weatherSeverity > 0 &&
+        !next.observedWeather &&
+        next.hour >= next.inputs.weatherHour) ||
+      (next.outlookChanged && !next.generatorEvent && next.hour >= 26)
+    )
+      break;
+    const previous = next;
+    next = { ...next, ...stepStationMinute(next), comparisonReady: false };
+    for (const m of next.activeSchedule) {
+      if (
+        missionServedMinutes(previous, m.id) === 0 &&
+        missionServedMinutes(next, m.id) > 0 &&
+        !next.records.some((r) => r.id === `mission-started-${m.id}`)
+      ) {
+        next = {
+          ...next,
+          records: [
+            ...next.records,
+            {
+              id: `mission-started-${m.id}`,
+              hour: previous.hour,
+              minute: previous.minute ?? 0,
+              type: "mission-started",
+              title: `${m.short} started`,
+              detail: `${m.resource} · ${m.power} kW · active V${next.activeVersion}`,
+              version: next.activeVersion,
+              sync: next.uplink === "lost" ? "queued" : "local",
+            },
+          ],
+        };
+      }
+      if (
+        missionProgress(next, m) === "Completed" &&
+        !next.records.some((r) => r.id === `mission-completed-${m.id}`)
+      ) {
+        const completedAt = missionCompletionHour(previous, m.id) ?? stationHour(next);
+        const eventHour = Math.floor(completedAt);
+        const eventMinute = Math.round((completedAt - eventHour) * 60);
+        next = {
+          ...next,
+          records: [
+            ...next.records,
+            {
+              id: `mission-completed-${m.id}`,
+              hour: eventHour,
+              minute: eventMinute,
+              type: "mission-completed",
+              title: `${m.short} completed`,
+              detail: `${missionServedMinutes(next, m.id)} supplied mission minutes · active V${next.activeVersion}`,
+              version: next.activeVersion,
+              sync: next.uplink === "lost" ? "queued" : "local",
+            },
+          ],
+        };
+        const beforeNotice = { ...next, hour: eventHour, minute: eventMinute };
+        const withNotice = notice(
+          beforeNotice,
+          {
+            key: `mission-completed-${m.id}`,
+            title: `${m.short} completed`,
+            detail: `Completed ${stationTime(completedAt)} under V${next.activeVersion}`,
+            priority: "advisory",
+            scope: "monitoring",
+            route: "/monitoring",
+            action: "Inspect mission execution",
+          },
+          a,
+        );
+        next = { ...withNotice, hour: next.hour, minute: next.minute ?? 0 };
+      }
+    }
+  }
+  const boundary =
+    next.hour >= 48
+      ? "Outcome checkpoint H48"
+      : next.hour >= next.inputs.weatherHour &&
+          next.inputs.weatherSeverity > 0 &&
+          !next.observedWeather
+        ? "Weather checkpoint"
+        : next.hour >= 26 && next.outlookChanged && !next.generatorEvent
+          ? "Asset checkpoint"
+          : null;
+  return reconcile(
+    {
+      ...next,
+      playback: {
+        ...next.playback,
+        running: boundary ? false : a.type === "tick" && s.playback.running,
+        reason: boundary ?? (a.type === "tick" ? "Execution running" : "Operator advance"),
+      },
+    },
+    a,
+  );
 }

@@ -56,14 +56,14 @@ export function AttentionQueue({
           No outstanding {scope ? `${scope} ` : ""}attention items.
         </p>
       )}
-      {items.slice(0, compact ? 4 : 60).map((n) => (
+      {items.slice(0, compact ? 2 : 60).map((n) => (
         <article
           className={`recording-attention-item priority-${n.priority} ${!n.active ? "resolved" : ""}`}
           key={n.id}
         >
           <div className="recording-attention-meta">
             <span>{n.priority}</span>
-            <time>{stationTime(n.hour)}</time>
+            <time>{stationTime(n.hour + (n.minute ?? 0) / 60)}</time>
             <span>
               {n.condition ? (n.active ? "Active" : "Resolved") : "Event"} ·{" "}
               {n.acknowledged ? "Seen" : "New"}
@@ -95,8 +95,8 @@ export function AttentionQueue({
           </div>
         </article>
       ))}
-      {compact && items.length > 4 && (
-        <small>{items.length - 4} more in header notifications</small>
+      {compact && items.length > 2 && (
+        <small>{items.length - 2} more in header notifications</small>
       )}
     </div>
   );

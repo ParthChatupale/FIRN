@@ -11,6 +11,10 @@ function capture(name) {
   checkpoints.push({
     name,
     hour: state.hour,
+    minute: state.minute ?? 0,
+    playback: state.playback,
+    missionMinutes: state.missionMinutes ?? {},
+    planningLeadMinutes: state.planningLeadMinutes,
     timestamp: m.stationTime(state.hour),
     assumptions: state.inputs,
     publishedInputs: w.forecastCase(state).inputs,
@@ -102,7 +106,7 @@ for (const point of state.observations) {
     throw Error(`Invalid resource H${point.hour}`);
 }
 const result = {
-  schema: 3,
+  schema: 4,
   preparationPacing: w.PREPARATION_MS,
   case: "Fictional coastal summer station / Alpha",
   config: m.STATION,

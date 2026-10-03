@@ -164,7 +164,10 @@ test("moderate loss needs no replacement and full loss blocks approval without c
 });
 test("workflow persists acknowledgements and reload cancels pending work safely", () => {
   const s = changed();
-  assert.deepEqual(w.restoreWorkflow(JSON.parse(JSON.stringify(s))), s);
+  assert.deepEqual(w.restoreWorkflow(JSON.parse(JSON.stringify(s))), {
+    ...s,
+    playback: { ...s.playback, running: false, reason: "Restored case" },
+  });
   const pending = reduce(w.initializeWorkflow(), { type: "generate" });
   const reload = w.restoreWorkflow(JSON.parse(JSON.stringify(pending)));
   assert.equal(reload.preparation, null);

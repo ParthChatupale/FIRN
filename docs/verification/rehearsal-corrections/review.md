@@ -1,5 +1,7 @@
 # Rehearsal corrections verification — 3 October 2026
 
+**Playback revision:** this record describes the earlier preparation/attention correction. The current minute-level clock, mission lifecycle events, scene retakes and updated outbox count are verified in [event playback](../event-playback/review.md). Current `data.json` is schema 4; the prior five-record count below is historical.
+
 Scope: browser-local presentation workflow in the original app. No backend, database migration or physical integration work. This supersedes the prior recording verification for the revised sequence, without deleting its historical screenshots.
 
 ## Automated checks

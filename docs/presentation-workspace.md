@@ -38,6 +38,8 @@ Connectivity is a non-modal tray. Link state, forecast age/receipt and outbox ac
 
 ## Verification and next rehearsal
 
+Minute execution, automatic event stops, clickable header clock and full-case retakes are documented in [event playback](event-playback-plan.md). Shift-click clock / Alt+R opens controls and pauses execution; Sources also offers an explicit entry. Mission activity appears on Operations and Monitoring. Timeline states distinguish upcoming/running/completed work; completion notices and log records carry true case timestamps. Final sample execution adds two outbox records to the prior script’s count.
+
 See [current verification](verification/rehearsal-corrections/review.md). Prior [recording screenshots](verification/recording-case/review.md) are historical.
 
 The revised browser rehearsal was blocked by the app’s browser-access policy, so visual layout and actual UI timing have not been re-verified. Reset the recording case and follow the script. Check desktop glanceability, narrow reflow, notification access and preparation across navigation before approving filming. Passing model tests does not establish visual acceptance or real-station readiness.

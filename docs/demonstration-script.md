@@ -8,6 +8,10 @@ Before the walkthrough, give a brief disclosure outside the operating panels:
 
 Team introduction is separate. One case, one operator, one continuous clock: **15 January 2026, 06:00 UTC** at H0; **17 January, 06:00 UTC** at H48. H means elapsed station hours. Start with Simulator → Reset case → confirm, then Operations.
 
+This is the functional rehearsal sequence; final video wording can be polished separately. Scenes 1–8 remain paused at H0. After activation, click the header clock to play/pause minute-level execution. Shift-click it or use Alt+R to open rehearsal controls (opening them pauses execution); close before recording. Event boundaries, not explanation/shooting duration, stop playback. See [checkpoint map](event-playback-plan.md).
+
+The panel automatically saves paused storyboard snapshots and supports named manual snapshots. Restore replaces the complete browser-local case and always pauses; it does not change backend data or the fixed case date. Save your current scene before restoring a different one. Use a saved first-mission snapshot or manual advance to H7 if you want a short running-mission shot before continuing; do not claim skipped intervals happened in real time.
+
 ## 1 — Hook: enough energy is not enough
 
 **Action:** Operations at H0 / active original plan V1. Indicate current power, reserve, fuel, resupply and mission windows without reading every metric.
@@ -76,7 +80,7 @@ V2 activates; conflict attention resolves, with history retained. Opening resour
 
 ## 9 — Expectation becomes observation
 
-**Action:** Monitoring → To weather H24 → Observe weather event. Show observed-versus-issued-plan evidence and mission progress.
+**Action:** Resume with the header clock, or use To weather H24 for a quick functional check. Playback stops at the weather checkpoint. Click Observe weather event; it remains paused afterward. Show observed-versus-issued-plan evidence, completed notifications/history and mission activity.
 
 > Now we advance to the forecast event. These are observations in the station case, not just future assumptions. Weather, usable generation, demand and resources evolve together. Completed work and earlier readings remain intact, and the issued reference lets us inspect what actually changed.
 
@@ -84,7 +88,7 @@ H24: about **340 kWh / 1,526 L**. Apply weather once; the outlook does not multi
 
 ## 10 — Independent equipment disturbance
 
-**Action:** Advance to H26 → severe generator derating. Hold on observed-event notice, assessment preparation, then planning-response-required notice. Inspect capacity and frozen reference.
+**Action:** Resume or advance to H26 (automatic asset stop) → severe generator derating. Hold on observed-event notice, assessment preparation, then planning-response-required notice. Clock remains paused; inspect capacity and frozen reference.
 
 > Weather is not the only uncertainty. Generator 1 now loses most of its available capacity. We first see the equipment consequence, then assess whether the remaining generation, battery and commitments can still coexist. An event is not already a ready replacement plan.
 
@@ -100,11 +104,11 @@ Sample preservation starts **H32**. V2 stays active until V3 activation. Pre-eve
 
 ## 12 — Continue and restore separate external operations
 
-**Action:** Monitoring → +6h three times, then +1h four times to H48. Connectivity → Restore uplink → Acknowledge records → separately Receive forecast.
+**Action:** Resume after V3 activation; inspect running sample preservation and its completion notice. Playback stops at H48. For a quick functional check, +6h three times and +1h four times also reach H48 through the same minute integration. Connectivity → Restore uplink → Acknowledge records → separately Receive forecast.
 
 > We continue under the authorized response. When the modeled link returns, decision acknowledgements and forecast receipt remain separate operations. Reconnection does not silently refresh a forecast or erase the decision sequence.
 
-This branch queues **five** records: modeled link loss, proposal generation, review, approval and activation. Counts depend on actions. Alert acknowledgement is separate from outbox acknowledgement.
+This exact branch queues **seven** records by H48: modeled link loss, proposal generation, review, approval, activation, and sample preservation’s start/completion. Immediately after V3 activation there are five. Counts depend on actions. Alert acknowledgement is separate from outbox acknowledgement.
 
 ## 13 — Close on consequence and evidence
 
@@ -117,6 +121,7 @@ H48: about **240 kWh / 1,170 L** now; separate nominal projection about **765 L 
 ## Rehearsal gates
 
 - Normal forecast precedes disturbances; generator scene is independent. Plan sequence: **V1 → V2 → V3**.
+- Newly scheduled work includes a configurable authorization/mobilization allowance (30 simulated minutes by default); activation rechecks the time/basis. Completed and ongoing work is retained.
 - No result before Generate, no success notice during preparation, no authorization outside Planner. Preparation does not advance station time.
 - Changed input basis invalidates pending results. Failed/interrupted tasks support retry, not a success claim.
 - Pending proposals or required response pause execution. Moderate derating may need no revision; full outage is a no-go branch, not the recording event.

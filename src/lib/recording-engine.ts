@@ -31,6 +31,8 @@ export type Proposal = {
   minimumBattery: number;
   minimumFuel: number;
   basis: number;
+  generatedMinute?: number;
+  leadMinutes?: number;
 };
 export type RecordItem = {
   id: string;
@@ -40,6 +42,7 @@ export type RecordItem = {
   detail: string;
   version: number;
   sync: "local" | "queued" | "acknowledged";
+  minute?: number;
 };
 export type StationPoint = {
   hour: number;
@@ -71,6 +74,10 @@ export type StationPoint = {
 export type PresentationState = {
   schema: 2;
   hour: number;
+  minute?: number;
+  livePoint?: StationPoint | null;
+  missionMinutes?: Record<string, number>;
+  planningLeadMinutes?: number;
   inputs: ScenarioInputs;
   assumptionVersion: number;
   outlookChanged: boolean;
@@ -306,7 +313,13 @@ function pointAt(
 ): StationPoint {
   const inputs = observed ? observedInputs(s, h) : s.inputs;
   const e = environmentalPoint(h, inputs, adverse);
-  const planned = schedule.filter((m) => !m.deferred && h >= m.start && h < m.start + m.duration);
+  const planned = schedule.filter(
+    (m) =>
+      !m.deferred &&
+      h >= m.start &&
+      h < m.start + m.duration &&
+      (s.missionMinutes?.[m.id] ?? 0) < baseMissions.find((b) => b.id === m.id)!.duration * 60,
+  );
   const usable = planned.filter((m) => weatherUsable(m, h, inputs, adverse));
   const teams = new Set<string>();
   const priority: Record<string, number> = { Essential: 0, High: 1, Flexible: 2 };
@@ -387,16 +400,16 @@ function pointAt(
     curtailed: round(e.renewable - renewable),
   };
 }
-function nextInventory(p: StationPoint, s: PresentationState) {
+function nextInventory(p: StationPoint, s: PresentationState, interval = 1) {
   // Inventory at H+1 closes interval H; never debit the next interval's dispatch.
   return {
     battery: clamp(
-      p.battery + p.charge * 0.94 - p.discharge / 0.94,
+      p.battery + interval * (p.charge * 0.94 - p.discharge / 0.94),
       STATION.batteryReserve,
       STATION.batteryCapacity,
     ),
     fuel:
-      Math.max(0, p.fuel - p.fuelRate) +
+      Math.max(0, p.fuel - p.fuelRate * interval) +
       (p.hour + 1 === arrivalHour(s) ? STATION.deliveryLitres : 0),
   };
 }
@@ -408,14 +421,14 @@ export function trajectoryForSchedule(
   adverse = false,
 ): StationPoint[] {
   const history = s.observations.slice(0, s.hour);
-  const opening = s.observations[s.hour];
+  const opening = currentStation(s);
   let battery = opening?.battery ?? STATION.initialBattery,
     fuel = opening?.fuel ?? STATION.initialFuel;
   const rows = [...history];
   for (let h = s.hour; h <= Math.max(s.hour, horizon); h++) {
     const p = pointAt(s, h, battery, fuel, schedule, kind, false, adverse);
     rows.push(p);
-    ({ battery, fuel } = nextInventory(p, s));
+    ({ battery, fuel } = nextInventory(p, s, h === s.hour ? 1 - (s.minute ?? 0) / 60 : 1));
   }
   return rows;
 }
@@ -435,6 +448,7 @@ export function conflictCount(schedule: Mission[]) {
   );
 }
 function executedHours(s: PresentationState, id: string) {
+  if (s.missionMinutes) return (s.missionMinutes[id] ?? 0) / 60;
   return s.observations.filter(
     (p) => p.hour < s.hour && p.runningMissions.includes(id) && p.unserved < 0.01,
   ).length;
@@ -460,10 +474,17 @@ export function candidateSchedule(s: PresentationState, kind: PlanKind): Mission
       placed.push({ ...m, deferred: true });
       continue;
     }
-    const duration = m.duration - done;
+    if (done > 0 && currentStation(s).runningMissions.includes(m.id)) {
+      placed.push({ ...active });
+      continue;
+    }
+    const duration = Math.ceil(m.duration - done);
     let best: Mission | undefined,
       score = Infinity;
-    for (let start = Math.max(m.earliest, s.hour); start + duration <= m.deadline; start++) {
+    const earliestStart = Math.ceil(
+      s.hour + (s.minute ?? 0) / 60 + (s.planningLeadMinutes ?? 0) / 60,
+    );
+    for (let start = Math.max(m.earliest, earliestStart); start + duration <= m.deadline; start++) {
       if (done && currentStation(s).runningMissions.includes(m.id) && start !== s.hour) continue;
       const candidate = { ...m, start, duration };
       if (placed.some((p) => overlap(candidate, p))) continue;
@@ -541,11 +562,91 @@ export function stationTrajectory(
   observed = false,
   horizon = 48,
 ): StationPoint[] {
-  if (observed) return s.observations.slice(0, Math.min(s.hour, horizon) + 1);
+  if (observed) {
+    const rows = s.observations.slice(0, Math.min(s.hour, horizon) + 1);
+    return s.livePoint && s.hour <= horizon
+      ? [...rows, { ...s.livePoint, hour: stationHour(s) }]
+      : rows;
+  }
   return trajectoryForSchedule(s, missionSchedule(kind, s), kind, horizon);
 }
 export function currentStation(s: PresentationState) {
-  return s.observations[s.hour]!;
+  return s.livePoint ?? s.observations[s.hour]!;
+}
+export function stationHour(s: PresentationState) {
+  return s.hour + (s.minute ?? 0) / 60;
+}
+export function missionServedMinutes(s: PresentationState, id: string) {
+  return Math.round(executedHours(s, id) * 60);
+}
+export function missionCompletionHour(s: PresentationState, id: string): number | null {
+  const event = s.records.find((r) => r.id === `mission-completed-${id}`);
+  if (event) return event.hour + (event.minute ?? 0) / 60;
+  const required = baseMissions.find((m) => m.id === id)!.duration;
+  let completed = 0;
+  for (const p of s.observations) {
+    if (
+      p.hour < s.hour &&
+      p.runningMissions.includes(id) &&
+      p.unserved < 0.01 &&
+      ++completed >= required
+    )
+      return p.hour + 1;
+  }
+  return null;
+}
+/** Constant hourly forcing/dispatch, integrated over each minute; events start a new segment. */
+export function stepStationMinute(s: PresentationState): PresentationState {
+  if (s.hour >= STATION.playbackEnd) return s;
+  const p = currentStation(s);
+  const credits =
+    s.missionMinutes ??
+    Object.fromEntries(baseMissions.map((m) => [m.id, executedHours(s, m.id) * 60]));
+  const missionMinutes = { ...credits };
+  if (p.unserved < 0.01)
+    for (const id of p.runningMissions)
+      missionMinutes[id] = Math.min(
+        baseMissions.find((m) => m.id === id)!.duration * 60,
+        (missionMinutes[id] ?? 0) + 1,
+      );
+  const minute = (s.minute ?? 0) + 1;
+  const battery = clamp(
+    p.battery + (p.charge * 0.94 - p.discharge / 0.94) / 60,
+    STATION.batteryReserve,
+    STATION.batteryCapacity,
+  );
+  const fuel = Math.max(0, p.fuel - p.fuelRate / 60);
+  if (minute < 60) {
+    const next = { ...s, minute, missionMinutes, livePoint: { ...p, battery, fuel } };
+    const finished = p.runningMissions.some(
+      (id) =>
+        (credits[id] ?? 0) < baseMissions.find((m) => m.id === id)!.duration * 60 &&
+        missionMinutes[id]! >= baseMissions.find((m) => m.id === id)!.duration * 60,
+    );
+    return finished
+      ? {
+          ...next,
+          livePoint: pointAt(next, s.hour, battery, fuel, s.activeSchedule, s.activeKind, true),
+        }
+      : next;
+  }
+  const hour = s.hour + 1;
+  const next = { ...s, hour, minute: 0, missionMinutes, livePoint: null };
+  return {
+    ...next,
+    observations: [
+      ...s.observations,
+      pointAt(
+        next,
+        hour,
+        battery,
+        fuel + (hour === arrivalHour(s) ? STATION.deliveryLitres : 0),
+        s.activeSchedule,
+        s.activeKind,
+        true,
+      ),
+    ],
+  };
 }
 export function planAssessment(s: PresentationState, schedule: Mission[], kind: PlanKind) {
   const rows = trajectoryForSchedule(
@@ -630,6 +731,7 @@ function record(
       {
         id: `record-${s.records.length + 1}`,
         hour: s.hour,
+        minute: s.minute ?? 0,
         type,
         title,
         detail,
@@ -641,6 +743,11 @@ function record(
 }
 function refreshCurrent(s: PresentationState): PresentationState {
   const old = currentStation(s);
+  if (s.minute)
+    return {
+      ...s,
+      livePoint: pointAt(s, s.hour, old.battery, old.fuel, s.activeSchedule, s.activeKind, true),
+    };
   return {
     ...s,
     observations: [
@@ -696,6 +803,8 @@ export function presentationReducer(
           schedule,
           ...assessment,
           basis: s.assumptionVersion,
+          generatedMinute: Math.round(stationHour(s) * 60),
+          leadMinutes: s.planningLeadMinutes ?? 0,
         },
       },
       "proposal",
@@ -1062,6 +1171,49 @@ export function restorePresentation(value: unknown): PresentationState {
       "curtailed",
     ] as const;
     if (
+      (s.minute !== undefined &&
+        (!Number.isInteger(s.minute) ||
+          s.minute < 0 ||
+          s.minute > 59 ||
+          (s.hour === 48 && s.minute !== 0))) ||
+      (s.planningLeadMinutes !== undefined &&
+        (!Number.isInteger(s.planningLeadMinutes) ||
+          s.planningLeadMinutes < 0 ||
+          s.planningLeadMinutes > 120)) ||
+      (s.missionMinutes !== undefined &&
+        (!s.missionMinutes ||
+          typeof s.missionMinutes !== "object" ||
+          Object.entries(s.missionMinutes).some(
+            ([id, minutes]) =>
+              !baseMissions.some(
+                (m) =>
+                  m.id === id &&
+                  Number.isInteger(minutes) &&
+                  minutes >= 0 &&
+                  minutes <= m.duration * 60,
+              ),
+          ))) ||
+      (s.livePoint &&
+        (!s.minute ||
+          s.livePoint.hour !== s.hour ||
+          numericKeys.some((k) => !Number.isFinite(s.livePoint![k])) ||
+          s.livePoint.battery < 99.99 ||
+          s.livePoint.battery > 400.01 ||
+          s.livePoint.fuel < 0 ||
+          !Array.isArray(s.livePoint.runningMissions) ||
+          !Array.isArray(s.livePoint.blockedMissions) ||
+          Math.abs(
+            s.livePoint.renewable +
+              s.livePoint.generator +
+              s.livePoint.discharge +
+              s.livePoint.unserved -
+              s.livePoint.demand -
+              s.livePoint.charge,
+          ) > 0.01)) ||
+      (s.minute && (!s.livePoint || !s.missionMinutes))
+    )
+      return reset();
+    if (
       !Array.isArray(s.observations) ||
       s.observations.length !== s.hour + 1 ||
       s.observations.some(
@@ -1091,6 +1243,8 @@ export function restorePresentation(value: unknown): PresentationState {
           typeof r.title !== "string" ||
           typeof r.detail !== "string" ||
           !Number.isInteger(r.hour) ||
+          (r.minute !== undefined &&
+            (!Number.isInteger(r.minute) || r.minute < 0 || r.minute > 59)) ||
           r.hour < 0 ||
           r.hour > s.hour ||
           !Number.isInteger(r.version) ||

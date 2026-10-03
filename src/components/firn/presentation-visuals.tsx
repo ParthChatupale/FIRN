@@ -16,7 +16,11 @@ import { Link } from "@tanstack/react-router";
 import { usePresentation } from "@/lib/presentation-context";
 import {
   currentStation,
+  environmentalPoint,
+  stationHour,
+  stationTime,
   missionProgress,
+  missionCompletionHour,
   missionSchedule,
   resourceOutlook,
   stationTrajectory,
@@ -261,16 +265,21 @@ export function MissionTimeline({
   kind,
   compact = false,
   comparison,
+  execution = false,
 }: {
   kind: PlanKind;
   compact?: boolean;
   comparison?: PlanKind | undefined;
+  execution?: boolean;
 }) {
   const { state } = usePresentation();
   const [selected, setSelected] = useState<Mission | null>(null);
   const missions = missionSchedule(kind, state);
   const before = comparison ? missionSchedule(comparison, state) : null;
   const end = 48;
+  const earlyRestriction = Array.from({ length: 4 }, (_, i) =>
+    environmentalPoint(10 + i, state.inputs),
+  ).some((e) => e.visibility < 2 || e.wind > 55);
   return (
     <div className={`studio-gantt ${compact ? "compact" : ""}`}>
       <div className="studio-gantt-ruler">
@@ -318,7 +327,7 @@ export function MissionTimeline({
                   title={`${m.name}, H${m.start}–H${m.start + m.duration}`}
                 />
               )}
-              {state.outlookChanged && m.id === "field" && (
+              {earlyRestriction && m.id === "field" && (
                 <span
                   className="studio-gantt-weather"
                   style={{ left: `${(10 / end) * 100}%`, width: `${(4 / end) * 100}%` }}
@@ -326,13 +335,19 @@ export function MissionTimeline({
               )}
               <span
                 className="studio-gantt-cursor"
-                style={{ left: `${(state.hour / end) * 100}%` }}
+                style={{ left: `${(stationHour(state) / end) * 100}%` }}
               />
             </span>
             <span
               className={`studio-mission-state ${m.deferred ? "text-amber" : status === "Completed" ? "text-mint" : ""}`}
             >
-              {compact && status === "Scheduled" ? `H${m.start}–${m.start + m.duration}` : status}
+              {status === "Scheduled"
+                ? `Upcoming · H${m.start}–${m.start + m.duration}`
+                : status === "Completed" && execution
+                  ? `Completed · ${stationTime(missionCompletionHour(state, m.id) ?? m.start + m.duration).split(", ")[1]}`
+                  : status === "In progress"
+                    ? "Running"
+                    : status}
             </span>
           </button>
         );
@@ -351,11 +366,11 @@ export function MissionTimeline({
           </span>
         </div>
       )}
-      {(!compact || comparison) && (
+      {
         <div className="studio-gantt-legend">
           <span>
-            <i />
-            Selected schedule
+            <i className={execution ? "completed" : ""} />
+            {execution ? "Green: completed supplied work" : "Selected schedule"}
           </span>
           {comparison && (
             <span>
@@ -363,13 +378,14 @@ export function MissionTimeline({
               Previous schedule
             </span>
           )}
-          {state.outlookChanged && (
+          <span>Upcoming: cyan · flexible: purple · cursor: station time</span>
+          {earlyRestriction && (
             <span className="text-amber">
               H10–H14 early restriction · weather front H{state.inputs.weatherHour}
             </span>
           )}
         </div>
-      )}
+      }
     </div>
   );
 }
@@ -396,7 +412,15 @@ export function ApprovalPanel({ compact = false }: { compact?: boolean }) {
       title={p ? `Plan V${p.version} · ${p.status}` : "Operator decision"}
       meta={
         <span className={`studio-chip ${p ? "warn" : "good"}`}>
-          {p ? "REVIEW REQUIRED" : "ACTIVE"}
+          {p
+            ? !p.feasible
+              ? "NO-GO"
+              : p.status === "proposed"
+                ? "REVIEW REQUIRED"
+                : p.status === "reviewed"
+                  ? "APPROVAL REQUIRED"
+                  : "READY TO ACTIVATE"
+            : "ACTIVE"}
         </span>
       }
       className="studio-approval"
@@ -498,7 +522,9 @@ export function ApprovalPanel({ compact = false }: { compact?: boolean }) {
             </button>
           </div>
           <small className="studio-footnote">
-            V{state.activeVersion} remains active until explicit activation.
+            V{state.activeVersion} remains active until explicit activation. New work includes{" "}
+            {p.leadMinutes ?? state.planningLeadMinutes ?? 30} minutes of authorization/mobilization
+            allowance.
           </small>
         </>
       ) : (

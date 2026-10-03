@@ -8,5 +8,9 @@ export type PresentationContextValue = {
   enabled: boolean;
   ready: boolean;
   storageWarning: boolean;
+  scenes: { id: string; name: string; snapshot: WorkflowState }[];
+  saveScene: (name: string) => void;
+  restoreScene: (id: string) => void;
+  removeScene: (id: string) => void;
 };
 export const PresentationContext = createContext<PresentationContextValue | null>(null);

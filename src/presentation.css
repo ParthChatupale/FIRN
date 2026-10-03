@@ -2308,8 +2308,118 @@
   margin-top: 12px;
 }
 .firn-studio .recording-attention-list {
+  max-height: 320px;
+  overflow-y: auto;
   display: grid;
   gap: 8px;
+}
+.firn-studio .recording-clock-button {
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  text-align: center;
+}
+.firn-studio .studio-gantt-legend i.completed {
+  background: #66cda9;
+}
+.firn-studio .recording-clock-button small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.firn-studio .recording-clock-button:focus-visible {
+  outline: 2px solid #52d4df;
+  outline-offset: 4px;
+}
+.firn-studio .recording-rehearsal-panel {
+  position: fixed;
+  z-index: 100;
+  right: 20px;
+  top: 95px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  width: min(450px, calc(100vw - 32px));
+  background: #0e1c28;
+  color: #e3eff7;
+  border: 1px solid #486272;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 20px 60px #0009;
+}
+.firn-studio .recording-rehearsal-panel header,
+.firn-studio .recording-mission-activity header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.firn-studio .recording-rehearsal-panel p {
+  margin: 12px 0;
+}
+.firn-studio .recording-rehearsal-panel label {
+  display: grid;
+  gap: 7px;
+  margin: 16px 0;
+  font-size: 12px;
+}
+.firn-studio .recording-rehearsal-panel select,
+.firn-studio .recording-rehearsal-panel input {
+  background: #08151e;
+  border: 1px solid #405763;
+  color: #e3eff7;
+  border-radius: 5px;
+  padding: 10px;
+  width: 100%;
+}
+.firn-studio .recording-scene-list > div {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #2c4252;
+}
+.firn-studio .recording-scene-list small {
+  display: block;
+  color: #91abba;
+  margin: 5px 0;
+}
+.firn-studio .recording-restore-confirm {
+  margin-top: 16px;
+  border: 1px solid #edb45f;
+  padding: 12px;
+  border-radius: 5px;
+}
+.firn-studio .recording-mission-activity {
+  padding: 16px 20px;
+  background: #101e29;
+  border: 1px solid #2b4252;
+  border-radius: 9px;
+}
+.firn-studio .recording-mission-activity header span {
+  font-size: 11px;
+  color: #69d6c5;
+}
+.firn-studio .recording-mission-activity p {
+  font-size: 12px;
+  color: #a2bbc9;
+  margin: 9px 0 0;
+}
+.firn-studio .recording-mission-activity > div {
+  margin: 12px 0;
+}
+.firn-studio .recording-mission-activity small,
+.firn-studio .recording-mission-activity > div span {
+  display: block;
+  font-size: 11px;
+  color: #a2bbc9;
+  margin-top: 5px;
+}
+.firn-studio .recording-mission-activity progress {
+  width: 100%;
+  height: 6px;
+  accent-color: #56d1b7;
 }
 .firn-studio .recording-attention-item {
   border-left: 3px solid #63bacd;

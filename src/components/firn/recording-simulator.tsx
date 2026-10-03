@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { ArrowUpRight, CloudSnow, Fuel, RotateCcw, Zap } from "lucide-react";
 import { usePresentation } from "@/lib/presentation-context";
-import { forecastCase } from "@/lib/recording-workflow";
+import { forecastCase, playbackBlock } from "@/lib/recording-workflow";
 import {
   arrivalHour,
   currentStation,
@@ -394,6 +394,7 @@ export function RecordingSimulator() {
                   !!state.proposal ||
                   !!state.preparation ||
                   state.responseRequired ||
+                  !!playbackBlock(state) ||
                   state.hour >= STATION.playbackEnd
                 }
                 onClick={() => dispatch({ type: "advance", hours: 1 })}
@@ -406,6 +407,7 @@ export function RecordingSimulator() {
                   !!state.proposal ||
                   !!state.preparation ||
                   state.responseRequired ||
+                  !!playbackBlock(state) ||
                   state.hour >= STATION.playbackEnd
                 }
                 onClick={() => dispatch({ type: "advance", hours: 6 })}

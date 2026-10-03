@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "test:workspace": "node --experimental-strip-types --test tests/workspace-model.test.mjs",
     "test:ui": "node --experimental-strip-types --test tests/workspace-model.test.mjs tests/operations-metrics.test.mjs tests/api-transport.test.mjs tests/planning-inputs.test.mjs tests/monitoring-model.test.mjs",
-    "test:presentation": "node --experimental-strip-types --test tests/presentation-model.test.mjs tests/recording-workflow.test.mjs",
+    "test:presentation": "node --experimental-strip-types --test tests/presentation-model.test.mjs tests/recording-workflow.test.mjs tests/recording-playback.test.mjs",
     "recording:export": "node --experimental-strip-types scripts/export-recording-case.mjs --output docs/verification/recording-case/data.json",
     "format": "prettier --write ."
   },

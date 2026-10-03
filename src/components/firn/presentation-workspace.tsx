@@ -30,7 +30,8 @@ import {
 import { usePresentation } from "@/lib/presentation-context";
 import { RecordingSimulator } from "./recording-simulator";
 import { AttentionQueue, PreparationStatus, DecisionLink } from "./recording-attention";
-import { forecastCase } from "@/lib/recording-workflow";
+import { forecastCase, playbackBlock } from "@/lib/recording-workflow";
+import { MissionActivity } from "./recording-playback";
 import {
   currentStation,
   conflictCount,
@@ -41,6 +42,7 @@ import {
   missionSchedule,
   resourceOutlook,
   stationTime,
+  stationHour,
   stationTrajectory,
   STATION,
   type PlanKind,
@@ -214,6 +216,7 @@ function Operations() {
           </Panel>
         </div>
         <div className="studio-operations-rail">
+          <MissionActivity />
           <Panel
             title="Assets & station load"
             meta={
@@ -721,7 +724,7 @@ function Monitor() {
   const points = observed.map((r, i) => ({
     hour: r.hour,
     observed: r.g1,
-    expected: reference[i]!.g1,
+    expected: (reference[i] ?? reference.at(-1))!.g1,
   }));
   const paused =
     !!state.proposal ||
@@ -752,38 +755,46 @@ function Monitor() {
         <div>
           <span className="studio-eyebrow">OPERATING CLOCK</span>
           <strong>
-            H{state.hour}
-            <small>{stationTime(state.hour)}</small>
+            H{state.hour}:{String(state.minute ?? 0).padStart(2, "0")}
+            <small>{stationTime(stationHour(state))}</small>
           </strong>
         </div>
         <div className="studio-action-row">
           <button
             className="studio-button secondary"
-            disabled={paused}
+            disabled={paused || !!playbackBlock(state)}
             onClick={() => dispatch({ type: "advance", hours: 1 })}
           >
             +1 hour
           </button>
           <button
             className="studio-button secondary"
-            disabled={paused}
+            disabled={paused || !!playbackBlock(state)}
             onClick={() => dispatch({ type: "advance", hours: 6 })}
           >
             +6 hours
           </button>
           <button
             className="studio-button"
-            disabled={paused || state.hour >= state.inputs.weatherHour}
+            disabled={paused || !!playbackBlock(state) || state.hour >= state.inputs.weatherHour}
             onClick={() =>
-              dispatch({ type: "advance", hours: state.inputs.weatherHour - state.hour })
+              dispatch({
+                type: "advance-minutes",
+                minutes: (state.inputs.weatherHour - state.hour) * 60 - (state.minute ?? 0),
+              })
             }
           >
             To weather · H{state.inputs.weatherHour}
           </button>
           <button
             className="studio-button secondary"
-            disabled={paused || state.hour >= 26}
-            onClick={() => dispatch({ type: "advance", hours: 26 - state.hour })}
+            disabled={paused || !!playbackBlock(state) || state.hour >= 26}
+            onClick={() =>
+              dispatch({
+                type: "advance-minutes",
+                minutes: (26 - state.hour) * 60 - (state.minute ?? 0),
+              })
+            }
           >
             To asset checkpoint · H26
           </button>
@@ -795,7 +806,7 @@ function Monitor() {
               ? "Open Mission Planner to assess a response before continuing."
               : state.preparation
                 ? "Preparation in progress; operating clock retained."
-                : "Only explicit advancement changes observed station time."}
+                : `${state.playback.reason}. Click the header clock to play/pause; Shift-click for scene controls.`}
         </span>
       </div>
       <div className="studio-kpi-grid">
@@ -930,13 +941,14 @@ function Monitor() {
             </Panel>
           </div>
           <Panel title="Mission execution">
-            <MissionTimeline kind={state.activeKind} compact />
+            <MissionTimeline kind={state.activeKind} compact execution />
           </Panel>
         </div>
         <div className="studio-stack">
           <Panel title="Planning response">
             <DecisionLink />
           </Panel>
+          <MissionActivity />
           <Panel title="Active conditions">
             <AttentionQueue scope="monitoring" compact />
           </Panel>
@@ -947,7 +959,9 @@ function Monitor() {
             <div className="studio-event-history">
               {[...state.records].reverse().map((r) => (
                 <div key={r.id}>
-                  <span>H{r.hour}</span>
+                  <span>
+                    H{r.hour}:{String(r.minute ?? 0).padStart(2, "0")}
+                  </span>
                   <div>
                     <strong>{r.title}</strong>
                     <small>{r.detail}</small>
@@ -1153,7 +1167,9 @@ function Decisions() {
         </div>
         <div>
           <span>Operating time</span>
-          <strong>H{state.hour}</strong>
+          <strong>
+            H{state.hour}:{String(state.minute ?? 0).padStart(2, "0")}
+          </strong>
         </div>
         <div>
           <span>Retained records</span>
@@ -1195,8 +1211,10 @@ function Decisions() {
           {records.map((r) => (
             <article key={r.id}>
               <div className="studio-record-time">
-                <strong>H{r.hour}</strong>
-                <small>{stationTime(r.hour)}</small>
+                <strong>
+                  H{r.hour}:{String(r.minute ?? 0).padStart(2, "0")}
+                </strong>
+                <small>{stationTime(r.hour + (r.minute ?? 0) / 60)}</small>
               </div>
               <div className="studio-record-marker">
                 <i />

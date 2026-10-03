@@ -22,6 +22,9 @@ Operations is situational awareness and attention. Monitoring is execution evide
 - [x] Connectivity remains non-blocking with independent forecast receipt and outbox acknowledgement.
 - [x] Revised script, model notes and fifteen-checkpoint logical export agree on V1 → V2 → V3 and five completed / one deferred.
 - [ ] Revised browser rehearsal: preparation timing, navigation, notification ordering, layout and responsive controls.
+- [x] Event-based minute playback, served-work lifecycle notifications, running/next/recent mission activity and full-case scene snapshots implemented and automatically tested.
+- [x] Configurable authorization/mobilization allowance with activation revalidation; lifecycle labels, mission legend/status and compact attention lists corrected.
+- [ ] User-led verification of clickable clock, auto stops, scene restore, live mission progress and revised visuals.
 - [ ] Final user visual approval before filming.
 
 Automated results and the browser-access limitation are recorded in [verification](verification/rehearsal-corrections/review.md). Historical screenshots do not verify the revised workflow.

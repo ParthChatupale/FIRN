@@ -19,12 +19,13 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePresentation } from "@/lib/presentation-context";
-import { currentStation, stationTime } from "@/lib/presentation-model";
+import { currentStation } from "@/lib/presentation-model";
 import { PresentationScreen } from "./presentation-workspace";
 import { RecordingConnectivity } from "./recording-connectivity";
 import { NotificationButton, PreparationStatus } from "./recording-attention";
+import { StationClock, RehearsalControls } from "./recording-playback";
 
 const nav = [
   { to: "/", label: "Operations", icon: LayoutDashboard },
@@ -43,6 +44,22 @@ export function PresentationShell() {
   const current = currentStation(state);
   const [drawer, setDrawer] = useState<"sources" | "connection" | null>(null);
   const [menu, setMenu] = useState(false);
+  const [rehearsal, setRehearsal] = useState(false);
+  const openRehearsal = useCallback(() => {
+    if (state.playback.running) dispatch({ type: "toggle-playback" });
+    setRehearsal(true);
+  }, [state.playback.running, dispatch]);
+  useEffect(() => {
+    const open = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        if (rehearsal) setRehearsal(false);
+        else openRehearsal();
+      }
+    };
+    window.addEventListener("keydown", open);
+    return () => window.removeEventListener("keydown", open);
+  }, [rehearsal, openRehearsal]);
   return (
     <div className="firn-studio">
       <a className="studio-skip" href="#station-workspace">
@@ -133,12 +150,7 @@ export function PresentationShell() {
             <strong>{current.temperature.toFixed(1)}°C</strong>
             <span>{current.wind.toFixed(0)} km/h</span>
           </div>
-          <div className="studio-clock">
-            <strong>{stationTime(state.hour)}</strong>
-            <small>
-              Operating hour H{state.hour} <span>· 48h case</span>
-            </small>
-          </div>
+          <StationClock openControls={openRehearsal} />
           <button
             className={`studio-icon-button ${state.uplink === "lost" ? "text-amber" : ""}`}
             aria-label="Open connectivity"
@@ -165,6 +177,7 @@ export function PresentationShell() {
             path !== "/monitoring" && <PreparationStatus />}
         </main>
       </div>
+      {rehearsal && <RehearsalControls close={() => setRehearsal(false)} />}
       {drawer === "connection" && <RecordingConnectivity close={() => setDrawer(null)} />}
       {drawer === "sources" && (
         <div className="studio-modal-backdrop" onClick={() => setDrawer(null)}>
@@ -257,6 +270,15 @@ export function PresentationShell() {
                     equipment or measure real forecasting performance.
                   </p>
                   <a href="/?workspace=backend">Open the existing connected workspace ↗</a>
+                  <button
+                    className="studio-button secondary"
+                    onClick={() => {
+                      setDrawer(null);
+                      openRehearsal();
+                    }}
+                  >
+                    Playback & scene checkpoints
+                  </button>
                 </div>
               </>
             ) : null}
