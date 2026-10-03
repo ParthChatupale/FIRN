@@ -44,7 +44,7 @@ export function RecordingSimulator() {
   const [basis, setBasis] = useState("applied");
   const [horizon, setHorizon] = useState(48);
   const [adverse, setAdverse] = useState(false);
-  const [capacity, setCapacity] = useState(10);
+  const [capacity, setCapacity] = useState<number | null>(null);
   const [reset, setReset] = useState(false);
   const c = currentStation(state);
   const preview = { ...state, inputs: draft };
@@ -89,6 +89,7 @@ export function RecordingSimulator() {
             onClick={() => {
               dispatch({ type: "reset" });
               setDraft({ ...BASE_INPUTS });
+              setCapacity(null);
               setReset(false);
             }}
           >
@@ -376,27 +377,40 @@ export function RecordingSimulator() {
                   <Zap size={16} />
                   Independent generator event
                 </strong>
+                <small>Current Generator 01 capacity: {format(c.g1Capacity)} kW</small>
                 <label>
-                  Generator 01 available kW
+                  Capacity after simulated event
                   <select
-                    aria-label="Generator event capacity"
-                    value={capacity}
-                    onChange={(e) => setCapacity(Number(e.target.value))}
+                    aria-label="Capacity after simulated event"
+                    value={state.generatorEvent?.capacity ?? capacity ?? ""}
+                    disabled={!!state.generatorEvent}
+                    onChange={(e) =>
+                      setCapacity(e.target.value === "" ? null : Number(e.target.value))
+                    }
                   >
+                    <option value="">Select a disturbance…</option>
                     <option value={10}>10 kW · severe derating</option>
                     <option value={25}>25 kW · moderate derating</option>
                     <option value={0}>0 kW · full outage</option>
                   </select>
                 </label>
+                <small>
+                  {state.generatorEvent
+                    ? `Recorded ${stationTime(state.generatorEvent.hour)}`
+                    : "Selection is not applied until you click Apply capacity loss at H26 or later."}
+                </small>
                 <button
                   className="studio-button secondary"
                   disabled={
                     !!state.proposal ||
                     !!state.preparation ||
                     !!state.generatorEvent ||
+                    capacity === null ||
                     state.hour < 26
                   }
-                  onClick={() => dispatch({ type: "generator-event", capacity })}
+                  onClick={() => {
+                    if (capacity !== null) dispatch({ type: "generator-event", capacity });
+                  }}
                 >
                   {state.generatorEvent ? "Event recorded" : "Apply capacity loss"}
                 </button>

@@ -268,3 +268,22 @@ test("source wiring reserves lifecycle authorization for Planner and initializes
   assert.equal(simulator.includes("Weather severity percent"), false);
   assert.ok(simulator.includes("Original arrival"));
 });
+
+test("simulator event controls require explicit selection and distinguish current capacity", () => {
+  const simulator = readFileSync(
+    new URL("../src/components/firn/recording-simulator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(simulator.includes("useState<number | null>(null)"));
+  assert.ok(simulator.includes('value="">Select a disturbance…</option>'));
+  assert.ok(simulator.includes("Current Generator 01 capacity: {format(c.g1Capacity)} kW"));
+  assert.ok(simulator.includes('aria-label="Capacity after simulated event"'));
+  assert.ok(simulator.includes('state.generatorEvent?.capacity ?? capacity ?? ""'));
+  assert.ok(simulator.includes('e.target.value === "" ? null : Number(e.target.value)'));
+  assert.match(simulator, /capacity === null\s*\|\|\s*state.hour < 26/);
+  // Explicit null checks keep a deliberately selected 0 kW outage valid.
+  assert.ok(
+    simulator.includes('if (capacity !== null) dispatch({ type: "generator-event", capacity })'),
+  );
+  assert.ok(simulator.includes("setCapacity(null)"));
+});
