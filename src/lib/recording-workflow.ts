@@ -19,6 +19,11 @@ import {
   type PresentationState,
   type PresentationAction,
 } from "./recording-engine.ts";
+import {
+  buildComparisonReport,
+  validComparisonReport,
+  type ComparisonReport,
+} from "./recording-comparison.ts";
 
 export const WORKFLOW_KEY = "firn:presentation:v3";
 export const PREPARATION_MS = { plan: 2500, forecast: 1000, assessment: 1200 } as const;
@@ -50,6 +55,7 @@ export type WorkflowState = PresentationState & {
   preparation: { token: number; kind: PreparationKind; basis: number; hour: number } | null;
   forecastReadyBasis: number;
   comparisonReady: boolean;
+  comparisonReport?: ComparisonReport;
   readyInputs: ScenarioInputs;
   responseRequired: boolean;
   attention: Attention[];
@@ -252,6 +258,14 @@ export function initializeWorkflow(base = initialPresentation()): WorkflowState 
       forecastReadyBasis: base.assumptionVersion,
       readyInputs: { ...base.inputs },
       comparisonReady: !!base.proposal,
+      comparisonReport: buildComparisonReport(
+        { ...base, planningLeadMinutes: base.planningLeadMinutes ?? 30 },
+        base.proposal
+          ? "generated"
+          : base.hour === 0 && base.assumptionVersion === 1 && base.activeVersion === 1
+            ? "baseline"
+            : "assessment",
+      ),
       responseRequired: false,
       attention: [],
     },
@@ -325,6 +339,16 @@ export function restoreWorkflow(raw: unknown): WorkflowState {
       value.failedPreparation ??
       (value.forecastReadyBasis !== base.assumptionVersion ? "forecast" : null),
     comparisonReady: value.comparisonReady!,
+    comparisonReport: validComparisonReport(value.comparisonReport, base)
+      ? value.comparisonReport
+      : buildComparisonReport(
+          { ...base, planningLeadMinutes: base.planningLeadMinutes ?? 30 },
+          base.proposal
+            ? "generated"
+            : base.hour === 0 && base.assumptionVersion === 1 && base.activeVersion === 1
+              ? "baseline"
+              : "assessment",
+        ),
     responseRequired: value.responseRequired!,
     attention: value.attention,
   };
@@ -448,6 +472,7 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
     };
     if (task.kind === "plan") {
       next = { ...next, ...presentationReducer(next, { type: "generate" }), comparisonReady: true };
+      next = { ...next, comparisonReport: buildComparisonReport(next, "generated") };
       const feasible = next.proposal?.feasible;
       next = notice(
         next,

@@ -24,11 +24,11 @@ Opening resources: **312 kWh / 1,650 L**. The 48h modeled historical intervals c
 
 ## 2 — Introduce planning before requesting a response
 
-**Action:** Mission Planner. Show active V1 schedule and upcoming shared-resource conflict attention. Do not generate yet.
+**Action:** Mission Planner. Show the opening baseline comparison (Original / Energy-first / Joint), active V1 schedule and upcoming shared-resource conflict attention. Do not generate a new proposal yet. Original V1 is active; the other approaches are evaluated alternatives, not authorized versions.
 
 > Energy is only part of this commitment. The original schedule also shares people and equipment. Here I inspect what is already in force, where commitments overlap, and request a coordinated mission-and-energy response when the operating basis changes.
 
-Two upcoming instrument-team overlaps belong to V1. Joint comparison results must not be visible before generation. Acknowledgement means seen, not resolved.
+Two upcoming instrument-team overlaps belong to V1. The baseline comparison is calculated from the opening state and normal assumptions using the same station model; it does not activate joint planning or claim history-trained forecasting. Later generation refreshes the three results. Retained comparisons show their calculation timestamp and assumption revision; a previous basis is not a fresh assessment. Acknowledgement means seen, not resolved.
 
 ## 3 — Establish the station case
 
@@ -124,7 +124,7 @@ H48: about **240 kWh / 1,170 L** now; separate nominal projection about **765 L 
 
 - Normal forecast precedes disturbances; generator scene is independent. Plan sequence: **V1 → V2 → V3**.
 - Newly scheduled work includes a configurable authorization/mobilization allowance (30 simulated minutes by default); activation rechecks the time/basis. Completed and ongoing work is retained.
-- No result before Generate, no success notice during preparation, no authorization outside Planner. Preparation does not advance station time.
+- Opening baseline comparison is precomputed, without a proposal or joint activation. New proposal results publish only after Generate completes; the previous timestamped comparison stays visible during preparation and becomes stale when its basis changes. No success notice during preparation, no authorization outside Planner. Preparation does not advance station time.
 - Changed input basis invalidates pending results. Failed/interrupted tasks support retry, not a success claim.
 - Pending proposals or required response pause execution. Moderate derating may need no revision; full outage is a no-go branch, not the recording event.
 - Sources retain the compact prototype/integration boundary. Login/settings, connected backend and PostgreSQL stay untouched.

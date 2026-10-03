@@ -6,7 +6,6 @@ import {
   BookOpen,
   CloudSnow,
   Compass,
-  Hexagon,
   LayoutDashboard,
   Menu,
   Radio,
@@ -74,7 +73,9 @@ export function PresentationShell() {
       )}
       <aside className={`studio-sidebar ${menu ? "is-open" : ""}`}>
         <Link to="/" className="studio-brand">
-          <Hexagon size={31} strokeWidth={1.4} />
+          <span className="studio-brand-mark" aria-hidden="true">
+            <img src="/firn-logo.png" alt="" width={52} height={52} />
+          </span>
           <span>
             FIRN<span className="studio-brand-dot">.</span>
             <small>OPERATIONAL INTELLIGENCE</small>

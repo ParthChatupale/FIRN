@@ -31,6 +31,7 @@ import { usePresentation } from "@/lib/presentation-context";
 import { RecordingSimulator } from "./recording-simulator";
 import { AttentionQueue, PreparationStatus, DecisionLink } from "./recording-attention";
 import { forecastCase, playbackBlock } from "@/lib/recording-workflow";
+import { buildComparisonReport, comparisonMatchesState } from "@/lib/recording-comparison";
 import { MissionActivity } from "./recording-playback";
 import {
   currentStation,
@@ -286,14 +287,17 @@ function Planner() {
   useEffect(() => {
     if (proposalVersion) setSelected("joint");
   }, [proposalVersion]);
-  const candidate = state.proposal?.kind ?? state.activeKind;
+  const report = state.comparisonReport ?? buildComparisonReport(state, "assessment");
+  const currentComparison = comparisonMatchesState(report, state);
+  const inspectable = currentComparison && !state.preparation;
+  const candidate = report.entries.find((entry) => entry.approach === "joint")!.kind;
   const variants: { kind: PlanKind; name: string; sub: string }[] = [
     { kind: "original", name: "Original schedule", sub: "Keep mission timing unchanged" },
     { kind: "energy", name: "Energy-first", sub: "Defer flexible scientific work" },
     { kind: "joint", name: "Joint mission–energy", sub: "Coordinate windows and shared resources" },
   ];
   const visibleKind =
-    !state.comparisonReady || selected === "active"
+    !inspectable || selected === "active"
       ? state.activeKind
       : selected === "joint"
         ? candidate
@@ -333,11 +337,27 @@ function Planner() {
           · applied outlook revision {state.assumptionVersion}
         </span>
       </div>
-      {state.comparisonReady && (
+      {
         <>
+          <p className="recording-plan-basis">
+            <strong>
+              {report.source === "baseline"
+                ? "Baseline comparison"
+                : report.source === "generated"
+                  ? "Generated comparison"
+                  : "Current-state comparison"}
+            </strong>
+            <span>
+              {stationTime(report.hour + report.minute / 60)} · assumptions {report.basis}
+              {currentComparison
+                ? " · evaluated alternatives; activation is separate"
+                : " · previous basis; generate to refresh"}
+              {state.preparation?.kind === "plan" ? " · preparing updated comparison…" : ""}
+            </span>
+          </p>
           <div className="studio-segmented">
             <button
-              className={selected === "active" ? "selected" : ""}
+              className={selected === "active" || !inspectable ? "selected" : ""}
               onClick={() => setSelected("active")}
             >
               Active plan
@@ -345,18 +365,26 @@ function Planner() {
           </div>
           <div className="studio-strategy-grid recording-strategies">
             {variants.map((v) => {
-              const kind = v.kind === "joint" ? candidate : v.kind;
-              const o = resourceOutlook(state, kind);
+              const o = report.entries.find((entry) => entry.approach === v.kind)!.outlook;
               return (
                 <button
                   key={v.kind}
-                  className={`studio-strategy ${selected === v.kind ? "selected" : ""}`}
+                  className={`studio-strategy ${inspectable && selected === v.kind ? "selected" : ""}`}
+                  disabled={!inspectable}
+                  title={
+                    inspectable
+                      ? "Inspect evaluated alternative; this does not activate it"
+                      : "Previous comparison; generate to refresh before inspecting"
+                  }
                   onClick={() => setSelected(v.kind)}
-                  aria-pressed={selected === v.kind}
+                  aria-pressed={inspectable && selected === v.kind}
                 >
                   <div>
                     <strong>{v.name}</strong>
                     {v.kind === "joint" && <span className="studio-chip">FIRN</span>}
+                    {v.kind === "original" && state.activeKind === "original" && (
+                      <span className="studio-chip">ACTIVE V{state.activeVersion}</span>
+                    )}
                   </div>
                   <p>{v.sub}</p>
                   <dl>
@@ -384,14 +412,14 @@ function Planner() {
             })}
           </div>
         </>
-      )}
+      }
       <div className="studio-planner-grid">
         <div className="studio-stack">
           <Panel
             title={
-              selected === "joint" && state.comparisonReady
+              selected === "joint" && inspectable
                 ? `Joint schedule · ${state.proposal ? `proposed V${state.proposal.version}` : "candidate comparison"}`
-                : selected === "active" || !state.comparisonReady
+                : selected === "active" || !inspectable
                   ? `Active schedule · V${state.activeVersion}`
                   : "Alternative mission schedule"
             }
@@ -401,9 +429,7 @@ function Planner() {
               kind={visibleKind}
               compact
               comparison={
-                selected === "joint" && state.comparisonReady && state.proposal
-                  ? state.activeKind
-                  : undefined
+                selected === "joint" && inspectable && state.proposal ? state.activeKind : undefined
               }
             />
           </Panel>

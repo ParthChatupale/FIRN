@@ -2,6 +2,11 @@
 .recording-strategies .studio-strategy {
   padding: 13px 16px;
 }
+/* A retained comparison remains readable even when its old basis cannot be inspected. */
+.firn-studio .recording-strategies .studio-strategy:disabled {
+  opacity: 1;
+  cursor: default;
+}
 .recording-strategies .studio-strategy p {
   margin: 5px 0 9px;
 }
@@ -360,6 +365,25 @@
 .studio-brand svg,
 .studio-brand-dot {
   color: #62d4e4;
+}
+.studio-brand-mark {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 40px;
+  flex: 0 0 34px;
+  overflow: hidden;
+}
+/* Frame the supplied transparent artwork without changing its original pixels. */
+.studio-brand-mark img {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  max-width: none;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
 }
 .studio-brand small {
   display: block;

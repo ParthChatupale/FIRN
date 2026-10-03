@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as w from "../src/lib/recording-workflow.ts";
 import * as m from "../src/lib/recording-engine.ts";
+import { comparisonMatchesState } from "../src/lib/recording-comparison.ts";
 const reduce = w.workflowReducer;
 function complete(s) {
   return reduce(s, {
@@ -34,6 +35,100 @@ test("baseline inputs match active plan and no candidate is published", () => {
   assert.equal(s.inputs.resupplyDelay, 0);
   assert.equal(s.comparisonReady, false);
   assert.equal(s.proposal, null);
+});
+
+test("baseline report evaluates three alternatives without proposing or activating joint planning", () => {
+  const s = w.initializeWorkflow();
+  const report = s.comparisonReport;
+  assert.equal(report.source, "baseline");
+  assert.equal(report.hour, 0);
+  assert.equal(report.basis, 1);
+  assert.equal(comparisonMatchesState(report, s), true);
+  assert.deepEqual(
+    report.entries.map((entry) => entry.approach),
+    ["original", "energy", "joint"],
+  );
+  for (const entry of report.entries) {
+    assert.deepEqual(entry.outlook, m.resourceOutlook(s, entry.kind));
+  }
+  assert.equal(report.entries[0].outlook.conflicts, 2);
+  assert.equal(report.entries[2].outlook.conflicts, 0);
+  assert.equal(s.activeKind, "original");
+  assert.equal(s.activeVersion, 1);
+  assert.equal(s.proposal, null);
+  assert.equal(s.preparation, null);
+  assert.equal(s.activations.length, 1);
+  assert.deepEqual(m.currentStation(s), m.currentStation(m.initialPresentation()));
+});
+
+test("new inputs and preparation retain the previous comparison until generation completes", () => {
+  let s = w.initializeWorkflow();
+  const previous = s.comparisonReport;
+  s = reduce(s, { type: "apply-outlook", inputs: m.RECORDING_INPUTS });
+  assert.equal(s.comparisonReport, previous);
+  assert.equal(comparisonMatchesState(previous, s), false);
+  s = complete(s);
+  s = reduce(s, { type: "generate" });
+  assert.equal(s.comparisonReport, previous);
+  assert.equal(s.proposal, null);
+  s = complete(s);
+  assert.equal(s.comparisonReport.source, "generated");
+  assert.equal(s.comparisonReport.basis, 2);
+  assert.equal(comparisonMatchesState(s.comparisonReport, s), true);
+  assert.equal(s.comparisonReport.entries[2].kind, s.proposal.kind);
+  assert.deepEqual(s.comparisonReport.entries[2].outlook, m.resourceOutlook(s, s.proposal.kind));
+  assert.notDeepEqual(s.comparisonReport.entries[2].outlook, previous.entries[2].outlook);
+});
+
+test("second generation refreshes all three cards using the independent capacity-loss basis", () => {
+  let s = complete(generator());
+  const previous = s.comparisonReport;
+  assert.equal(previous.generatorCapacity, 80);
+  s = reduce(s, { type: "generate" });
+  assert.equal(s.comparisonReport, previous);
+  s = complete(s);
+  assert.equal(s.proposal.version, 3);
+  assert.equal(s.comparisonReport.hour, 26);
+  assert.equal(s.comparisonReport.generatorCapacity, 10);
+  assert.equal(s.comparisonReport.entries[2].kind, "adaptive");
+  for (const entry of s.comparisonReport.entries) {
+    assert.deepEqual(entry.outlook, m.resourceOutlook(s, entry.kind));
+  }
+});
+
+test("activation, minute playback and reload preserve the timestamped comparison report", () => {
+  let s = complete(reduce(complete(generator()), { type: "generate" }));
+  const report = s.comparisonReport;
+  s = authorize(s);
+  s = reduce(s, { type: "advance-minutes", minutes: 168 });
+  assert.equal(s.hour, 28);
+  assert.equal(s.minute, 48);
+  assert.equal(s.comparisonReport, report);
+  assert.equal(s.comparisonReady, false);
+  assert.equal(comparisonMatchesState(report, s), false);
+  const restored = w.restoreWorkflow(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(restored.comparisonReport, report);
+  assert.deepEqual(m.currentStation(restored), m.currentStation(s));
+  assert.equal(restored.activeVersion, 3);
+  assert.deepEqual(restored.activeSchedule, s.activeSchedule);
+});
+
+test("old or malformed optional comparison reports never reset an existing rehearsal", () => {
+  const s = authorize(complete(reduce(complete(generator()), { type: "generate" })));
+  const old = JSON.parse(JSON.stringify(s));
+  delete old.comparisonReport;
+  for (const raw of [old, { ...old, comparisonReport: { source: "bad" } }]) {
+    const restored = w.restoreWorkflow(raw);
+    assert.equal(restored.activeVersion, 3);
+    assert.equal(restored.hour, 26);
+    assert.deepEqual(restored.activeSchedule, s.activeSchedule);
+    assert.deepEqual(restored.observations, s.observations);
+    assert.deepEqual(m.currentStation(restored), m.currentStation(s));
+    assert.deepEqual(restored.records, s.records);
+    assert.equal(restored.comparisonReport.source, "assessment");
+    assert.equal(restored.comparisonReport.entries.length, 3);
+    assert.equal(restored.proposal, null);
+  }
 });
 test("generation holds results and notification until minimum interval and real completion", () => {
   const s = reduce(w.initializeWorkflow(), { type: "generate" });
