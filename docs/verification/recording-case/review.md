@@ -1,5 +1,7 @@
 # Recording workflow verification — 3 October 2026
 
+**Historical workflow evidence:** this record and its screenshots describe the prior V2/V3/V4 recording. The revised workflow is verified separately in [rehearsal corrections](../rehearsal-corrections/review.md). `data.json` now contains the regenerated fifteen-checkpoint V1/V2/V3 sequence; these old screenshot claims do not verify that revision.
+
 Scope: original app's browser-local presentation mode, not the FastAPI/PostgreSQL workflow. Preview `http://localhost:3001/`. The final user visual acceptance gate is still open.
 
 ## Automated evidence

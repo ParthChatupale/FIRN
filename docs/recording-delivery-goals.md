@@ -1,54 +1,35 @@
 # Recording delivery goals
 
-This document records the current user-approved implementation scope. It supersedes the fixed-event presentation's old rehearsal sequence, not the backend engineering roadmap. Use the original `src/` app; preserve login/settings, API-connected routes, backend code and PostgreSQL. No migrations or database writes in this work.
+Current scope: [rehearsal corrections](rehearsal-corrections-plan.md), original `src/` app. This replaces the prior recording order, not the backend roadmap. Backend/PostgreSQL, login/settings, connected routes and separate `frontend/` draft remain untouched.
 
-## Story
+## Story and authority
 
-1. Problem hook.
-2. Operations: populated current station state.
-3. Simulator: baseline station case and its operating data.
-4. Planner: original / energy-first / joint comparison on identical inputs.
-5. Review, approve and activate the baseline joint proposal.
-6. Introduce baseline forecast and the nominal/adverse range.
-7. Simulator: preview/apply resupply delay and revised future weather outlook.
-8. Updated forecast, dashboard planning impact and affected mission/resource windows.
-9. Review and activate the proposed joint revision.
-10. Simulator/Monitoring: advance to and apply observed weather, without double-counting the forecast input.
-11. Independent generator disturbance and observed-versus-reference impact.
-12. Review the adaptive replacement; optionally model external-link loss while deciding.
-13. Continue execution, restore modeled link and acknowledge actual queued decisions.
-14. Final station outcomes and decision history.
+Use the [thirteen-scene narration/action script](demonstration-script.md): dashboard → active Planner introduction → Simulator baseline → normal forecast → draft/apply delayed resupply and storm → updated outlook → Generate joint response → review/approve/activate V2 → observe weather → independent generator assessment → Generate/authorize V3 → continue/reconnect → outcomes/history.
 
-Two primary scenarios: resupply delay and weather deterioration. Generator degradation is a separate observed asset event, not automatically caused by weather. The recording is sequential; navigation remains available and does not reset state. Presentation controls do not operate real hardware.
+Operations is situational awareness and attention. Monitoring is execution evidence. Mission Planner is the sole proposal authorization workspace. Forecast edits never authorize a new plan; alert acknowledgement never resolves a condition or approves anything.
 
-## Acceptance checklist
+## Implementation checkpoints
 
-- [x] Reconcile master narration/action script with the sequence above and give the generator event its own scene.
-- [x] One versioned case/configuration drives all routes and checkpoints; no per-screen invented values.
-- [x] Deterministic interval model with power balance, battery efficiency/reserve, fuel consumption, equipment capacity and independent event timing.
-- [x] Candidate schedules are derived from mission windows, resources and operating conditions; comparison conflicts/limits calculated, not hardcoded.
-- [x] Nominal/adverse assumptions produce the forecast range; no calibrated-probability claim.
-- [x] Simulator workspace: current-state slab, heterogeneous data visualizations, editable bounded inputs, before/after preview and distinct future/observed controls.
-- [x] Dependent values change together; unchanged current resources/history remain unchanged after forecast edits and activation.
-- [x] Planner separates comparisons, proposed and active schedules; no implicit activation; constrained outcomes are visible.
-- [x] Dashboard, Forecast, Assets, Monitoring and Decision Log use the same clock, records and plan versions.
-- [x] Connectivity is non-blocking, with independently tracked forecast receipt, connection transitions and decision acknowledgement; real local/backend health is never fabricated.
-- [x] Timestamp/units/operator-readable asset names; clear stale-data, pending/no-go, reset/reload and unsupported-input handling.
-- [x] Recording dataset/export script and assumptions/results document created; baseline/disruption branches validated logically.
-- [x] Automated model/regression checks, TypeScript, scoped lint and production build pass.
-- [x] Browser rehearsal of the complete story; desktop glanceability and narrow reflow verified with saved screenshots.
-- [ ] Final user visual acceptance (cannot be marked by implementation alone).
+- [x] Baseline controls match applied inputs: +0 additional delay, baseline weather; original/revised/draft arrival dates are distinct.
+- [x] Named weather choices, physical before/after values, bounded advanced downside assumptions and current-state visualizations.
+- [x] Shared preparation lifecycle: 2.5s minimum proposal, 1s forecast, 1.2s asset assessment; results/ready notices publish after completion.
+- [x] No joint comparison before Generate; input changes/reset invalidate stale tasks; navigation does not recreate the task.
+- [x] Event-driven priority/clock/action attention queue and header notifications; acknowledgement is independent of resolution.
+- [x] Only remaining shared-resource conflicts and actual weather thresholds produce current condition notices.
+- [x] Operations/Monitoring link to Planner rather than duplicate authorization.
+- [x] Observed weather and generator events remain independent; severe loss requests a planning response, not an instant proposal.
+- [x] Shared physical recurrence, completed-history preservation, versioned schedules and no-go approval guard.
+- [x] Connectivity remains non-blocking with independent forecast receipt and outbox acknowledgement.
+- [x] Revised script, model notes and fifteen-checkpoint logical export agree on V1 → V2 → V3 and five completed / one deferred.
+- [ ] Revised browser rehearsal: preparation timing, navigation, notification ordering, layout and responsive controls.
+- [ ] Final user visual approval before filming.
 
-Implementation verified on 3 October 2026: 17 model tests and 41 UI regression tests passed, TypeScript and production build passed, scoped lint reported no errors (two Fast Refresh warnings). The complete browser rehearsal, independent full-outage no-go branch, reload persistence and narrow-screen reflow are recorded in [verification](verification/recording-case/review.md). Narration is in [the script](demonstration-script.md); assumptions and limitations are in [the model document](recording-model.md). Final visual approval remains with the user.
+Automated results and the browser-access limitation are recorded in [verification](verification/rehearsal-corrections/review.md). Historical screenshots do not verify the revised workflow.
 
-## Simulator layout
+## Boundaries
 
-Bounded three-area workstation: case/current-state slab; dominant power/weather/mission/resource visualization with selectable views; event input/preview/impact controls. Independent resupply, future-weather, observed-weather and generator controls. Functional supporting options: nominal/adverse preview, plot horizon, data view, event effective time/severity, interval advance, hourly table and scoped reset. No decorative disabled features or repeated explanatory banners.
+All values derive from one fictional station case, not per-screen filler. Nominal/adverse bands are explicit assumptions, not calibrated forecast probabilities. Minimum intervals are presentation pacing, not measured backend solver latency. Real sensor/network adapters and authenticated hardware actuation remain intended integrations, not implemented claims.
 
-## Data rules
+## Manual completion
 
-Author a fictional station configuration and environmental/mission inputs, not desired outcome numbers. Model observations, future assumption versions, schedule versions, events and human decisions separately. Forecast revisions preserve current measurements and the observed prefix; activation preserves resource inventory and executed work. Scenario ranges are illustrative assumptions, not learned confidence intervals. A severe condition may require deferral/no-go, not a guaranteed success.
-
-## Connectivity rules
-
-The external link is modeled. Keep local operation visible during the segment. Loss prevents external forecast refresh and queues actual local decisions. Reconnection alone does not acknowledge records or refresh forecasts. Decision synchronization must not overwrite forecast-receipt timestamps. Empty/repeated synchronization is idempotent. Use readable dates and a compact disclosure; intended sensor adapters remain unconnected.
+Reset the recording case, walk the script one scene at a time, and verify baseline/forecast first, delayed readiness, notice routing, sole human authority, independent generator assessment, continuity and final outcome. Desktop/narrow visual checks remain necessary; automated source/model tests are not a substitute.

@@ -40,7 +40,13 @@ Engine fuel is an illustrative affine operating curve: running Generator 01 cons
 
 Observed points are appended only by explicit clock advancement. Changing future inputs leaves observations unchanged. Observing weather/derating or activating a plan changes the **current interval's flows**, not its opening inventory or earlier intervals. Completed mission hours are counted from executed observations, not from a scheduled finish time. A generator event captures the issued pre-event reference so later approval cannot erase the deviation.
 
-Future environmental assumptions and observed events are separate. Preview/apply never injects weather. Observed weather changes local forcing once, with no second multiplier. Derating is independently injected; it is not caused automatically by weather. Playback stops at the weather checkpoint and pauses on pending proposals. Reset uses only `firn:presentation:v2`; the v1 key and backend workflow keys are not deleted.
+Future environmental assumptions and observed events are separate. Preview/apply never injects weather. Observed weather changes local forcing once, with no second multiplier. Derating is independently injected; it is not caused automatically by weather. Playback stops at the weather checkpoint and pauses on pending preparation/proposals or a required planning response. Reset writes only `firn:presentation:v3`; legacy and backend workflow keys are not deleted.
+
+## Preparation, publication and attention
+
+`src/lib/recording-workflow.ts` wraps the pure interval model with shared lifecycle state. Proposal generation has a 2.5-second minimum visible interval, forecast publication 1 second, and asset assessment 1.2 seconds. These are configurable presentation pacing, not measured backend performance. UI elapsed time does not advance station time. Input receipt precedes forecast readiness; generator observation precedes assessment. No joint result/comparison is published before an explicit Generate request completes. Previously published forecast inputs remain visible during refresh.
+
+Input changes and reset invalidate pending work; completion tokens bind results to their input basis and station hour. Failed/interrupted work supports retry. Notifications carry stable IDs, sequencing, station time, input basis and relevant plan version. Acknowledgement marks seen, not resolved or approved. Conditions use remaining conflicts and actual weather thresholds; event history retains prior notices. Authorization controls exist only in Mission Planner.
 
 ## How proposals and bands are derived
 
@@ -58,22 +64,21 @@ Reproduce with:
 node --experimental-strip-types scripts/export-recording-case.mjs --output docs/verification/recording-case/data.json
 ```
 
-The export includes each checkpoint's inputs, current state, schedule, proposal/limits, full observed prefix, projected hourly slab, environmental outlook, decision lineage and connection clocks. UI values are not copied from an unrelated spreadsheet.
+The fifteen-checkpoint export includes applied and published inputs, preparation, attention, current state, schedule, proposal/limits, full observed prefix, projected hourly slab, environmental outlook, decision lineage and connection clocks. Completion intervals are supplied logically by the exporter; this is not a browser timing test. UI values are not copied from an unrelated spreadsheet.
 
 | Checkpoint                   | Active plan     | Opening battery / fuel | Nominal fuel before delivery |
 | ---------------------------- | --------------- | ---------------------- | ---------------------------- |
 | Baseline / H0                | V1 original     | 312 kWh / 1,650 L      | 1,403 L                      |
-| Joint authorization / H0     | V2 joint        | 312 kWh / 1,650 L      | 1,382 L                      |
-| Future inputs applied / H0   | V2 unchanged    | 312 kWh / 1,650 L      | 830 L                        |
-| Revised authorization / H0   | V3 weather      | 312 kWh / 1,650 L      | 805 L                        |
-| Weather observed / H24       | V3              | 340 kWh / 1,526 L      | 805 L                        |
-| Independent derating / H26   | V3; V4 proposed | 340 kWh / 1,498 L      | 740 L                        |
-| Adaptive authorization / H26 | V4              | 340 kWh / 1,498 L      | 765 L                        |
-| Continuation / H48           | V4              | 240 kWh / 1,170 L      | 765 L                        |
+| Revised forecast ready / H0  | V1 unchanged    | 312 kWh / 1,650 L      | 856 L                        |
+| Joint authorization / H0     | V2 weather      | 312 kWh / 1,650 L      | 805 L                        |
+| Weather observed / H24       | V2              | 340 kWh / 1,526 L      | 805 L                        |
+| Independent derating / H26   | V2; assess first| 340 kWh / 1,498 L      | 740 L                        |
+| Adaptive authorization / H26 | V3              | 340 kWh / 1,498 L      | 765 L                        |
+| Continuation / H48           | V3              | 240 kWh / 1,170 L      | 765 L                        |
 
 Original schedule has two actual shared-team overlaps. Joint retains all six baseline missions without those overlaps; energy-first defers two. Joint uses more fuel than the original in this case because its dispatch preserves more battery margin; do not narrate a universal fuel-saving advantage. Revised weather shifts field sampling H8→H7. The severe derating branch defers calibration, moves sample preservation to H32 and ends with five completed / one deferred mission and no nominal unserved intervals. Adverse assessment remains above configured reserves, but margins are narrow; this is conditional on these assumptions.
 
-Moderate 25 kW derating needs no automatic replacement in this case. Full outage (0 kW) creates a no-go; approval is disabled. Do not change these outcomes into universally successful story cards.
+Moderate 25 kW derating needs no replacement in this case. Severe/full loss is assessed first; the operator must Generate a response. Full outage (0 kW) yields a no-go on generation; approval is disabled. Do not change these outcomes into universally successful story cards.
 
 ## Connectivity semantics
 

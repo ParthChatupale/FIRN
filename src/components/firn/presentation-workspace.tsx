@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Area,
@@ -24,22 +24,21 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  TriangleAlert,
   Wind,
   Zap,
 } from "lucide-react";
 import { usePresentation } from "@/lib/presentation-context";
 import { RecordingSimulator } from "./recording-simulator";
+import { AttentionQueue, PreparationStatus, DecisionLink } from "./recording-attention";
+import { forecastCase } from "@/lib/recording-workflow";
 import {
   currentStation,
   conflictCount,
-  activeCandidateKind,
   forecastRows,
   environmentalPoint,
   monitoringReference,
   missionProgress,
   missionSchedule,
-  operationalAlerts,
   resourceOutlook,
   stationTime,
   stationTrajectory,
@@ -81,11 +80,14 @@ function Operations() {
   const [view, setView] = useState<"projection" | "observed">("projection");
   const c = currentStation(state);
   const observed = stationTrajectory(state, state.activeKind, true, state.hour);
-  const projected = stationTrajectory(state, state.activeKind, false, state.hour + 48).filter(
-    (r) => r.hour >= state.hour,
-  );
+  const projected = stationTrajectory(
+    forecastCase(state),
+    state.activeKind,
+    false,
+    state.hour + 48,
+  ).filter((r) => r.hour >= state.hour);
   const rows = view === "observed" ? observed : projected;
-  const outlook = resourceOutlook(state, state.activeKind);
+  const outlook = resourceOutlook(forecastCase(state), state.activeKind);
   const missions = missionSchedule(state.activeKind, state);
   const completed = missions.filter((m) => missionProgress(state, m) === "Completed").length;
   const avgFuel = projected.slice(0, 24).reduce((sum, r) => sum + r.fuelRate, 0) / 24;
@@ -184,8 +186,8 @@ function Operations() {
                 rows={rows}
                 height={150}
                 event={
-                  state.inputs.weatherSeverity > 0 && view === "projection"
-                    ? state.inputs.weatherHour
+                  forecastCase(state).inputs.weatherSeverity > 0 && view === "projection"
+                    ? forecastCase(state).inputs.weatherHour
                     : false
                 }
               />
@@ -249,9 +251,11 @@ function Operations() {
                 </small>
               </div>
             </div>
-            <AlertList />
           </Panel>
-          <ApprovalPanel compact />
+          <Panel title="Attention required">
+            <PreparationStatus />
+            <AttentionQueue compact />
+          </Panel>
         </div>
       </div>
       <ValuesTable rows={rows} />
@@ -283,34 +287,26 @@ function Metric({
     </section>
   );
 }
-function AlertList() {
-  const { state } = usePresentation();
-  return (
-    <div className="studio-alert-list">
-      {operationalAlerts(state).map((a) => (
-        <div key={a.title} className={a.severity === "warning" ? "warning" : "good"}>
-          {a.severity === "warning" ? <TriangleAlert size={15} /> : <ShieldCheck size={15} />}
-          <div>
-            <strong>{a.title}</strong>
-            <small>{a.detail}</small>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Planner() {
   const { state, dispatch } = usePresentation();
-  const [selected, setSelected] = useState<PlanKind>("joint");
-  const candidate = state.proposal?.kind ?? activeCandidateKind(state);
-  const rows = stationTrajectory(state, candidate, false, 48);
+  const [selected, setSelected] = useState<PlanKind | "active">("active");
+  const proposalVersion = state.proposal?.version;
+  useEffect(() => {
+    if (proposalVersion) setSelected("joint");
+  }, [proposalVersion]);
+  const candidate = state.proposal?.kind ?? state.activeKind;
   const variants: { kind: PlanKind; name: string; sub: string }[] = [
     { kind: "original", name: "Original schedule", sub: "Keep mission timing unchanged" },
     { kind: "energy", name: "Energy-first", sub: "Defer flexible scientific work" },
     { kind: "joint", name: "Joint mission–energy", sub: "Coordinate windows and shared resources" },
   ];
-  const visibleKind = selected === "joint" ? candidate : selected;
+  const visibleKind =
+    !state.comparisonReady || selected === "active"
+      ? state.activeKind
+      : selected === "joint"
+        ? candidate
+        : selected;
+  const rows = stationTrajectory(forecastCase(state), visibleKind, false, 48);
   return (
     <>
       <PageTitle
@@ -320,68 +316,103 @@ function Planner() {
         action={
           <button
             className="studio-button"
-            disabled={!!state.proposal || state.hour >= STATION.playbackEnd}
+            disabled={
+              !!state.proposal ||
+              !!state.preparation ||
+              state.hour >= STATION.playbackEnd ||
+              state.forecastReadyBasis !== state.assumptionVersion
+            }
             onClick={() => dispatch({ type: "generate" })}
           >
             <SlidersHorizontal size={16} />
-            Generate joint proposal
+            {state.preparation?.kind === "plan" ? "Preparing proposal…" : "Generate joint proposal"}
           </button>
         }
       />
-      <div className="studio-strategy-grid recording-strategies">
-        {variants.map((v) => {
-          const kind = v.kind === "joint" ? candidate : v.kind;
-          const o = resourceOutlook(state, kind);
-          return (
-            <button
-              key={v.kind}
-              className={`studio-strategy ${selected === v.kind ? "selected" : ""}`}
-              onClick={() => setSelected(v.kind)}
-              aria-pressed={selected === v.kind}
-            >
-              <div>
-                <strong>{v.name}</strong>
-                {v.kind === "joint" && <span className="studio-chip">FIRN</span>}
-              </div>
-              <p>{v.sub}</p>
-              <dl>
-                <div>
-                  <dt>Missions scheduled</dt>
-                  <dd>{o.missions} / 6</dd>
-                </div>
-                <div>
-                  <dt>Fuel at resupply</dt>
-                  <dd>{format(o.fuelAtResupply)} L</dd>
-                </div>
-                <div>
-                  <dt>Minimum reserve margin</dt>
-                  <dd>{format(o.minimumBattery - STATION.batteryReserve)} kWh</dd>
-                </div>
-                <div>
-                  <dt>Shared-resource conflicts</dt>
-                  <dd className={o.conflicts ? "text-amber" : "text-mint"}>
-                    {o.conflicts ? `${o.conflicts} unresolved` : "None"}
-                  </dd>
-                </div>
-              </dl>
-            </button>
-          );
-        })}
+      <PreparationStatus />
+      <div className="recording-plan-basis">
+        <strong>
+          Active V{state.activeVersion} ·{" "}
+          {state.activeKind === "original" ? "Original schedule" : "Authorized joint schedule"}
+        </strong>
+        <span>
+          Issued arrival{" "}
+          {stationTime(STATION.resupplyHour + state.activations.at(-1)!.inputs.resupplyDelay * 24)}{" "}
+          · applied outlook revision {state.assumptionVersion}
+        </span>
       </div>
+      {state.comparisonReady && (
+        <>
+          <div className="studio-segmented">
+            <button
+              className={selected === "active" ? "selected" : ""}
+              onClick={() => setSelected("active")}
+            >
+              Active plan
+            </button>
+          </div>
+          <div className="studio-strategy-grid recording-strategies">
+            {variants.map((v) => {
+              const kind = v.kind === "joint" ? candidate : v.kind;
+              const o = resourceOutlook(state, kind);
+              return (
+                <button
+                  key={v.kind}
+                  className={`studio-strategy ${selected === v.kind ? "selected" : ""}`}
+                  onClick={() => setSelected(v.kind)}
+                  aria-pressed={selected === v.kind}
+                >
+                  <div>
+                    <strong>{v.name}</strong>
+                    {v.kind === "joint" && <span className="studio-chip">FIRN</span>}
+                  </div>
+                  <p>{v.sub}</p>
+                  <dl>
+                    <div>
+                      <dt>Missions scheduled</dt>
+                      <dd>{o.missions} / 6</dd>
+                    </div>
+                    <div>
+                      <dt>Fuel at resupply</dt>
+                      <dd>{format(o.fuelAtResupply)} L</dd>
+                    </div>
+                    <div>
+                      <dt>Minimum reserve margin</dt>
+                      <dd>{format(o.minimumBattery - STATION.batteryReserve)} kWh</dd>
+                    </div>
+                    <div>
+                      <dt>Shared-resource conflicts</dt>
+                      <dd className={o.conflicts ? "text-amber" : "text-mint"}>
+                        {o.conflicts ? `${o.conflicts} unresolved` : "None"}
+                      </dd>
+                    </div>
+                  </dl>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
       <div className="studio-planner-grid">
         <div className="studio-stack">
           <Panel
             title={
-              selected === "joint"
+              selected === "joint" && state.comparisonReady
                 ? `Joint schedule · ${state.proposal ? `proposed V${state.proposal.version}` : "candidate comparison"}`
-                : "Alternative mission schedule"
+                : selected === "active" || !state.comparisonReady
+                  ? `Active schedule · V${state.activeVersion}`
+                  : "Alternative mission schedule"
             }
             meta={<span className="studio-unit">H0–H48</span>}
           >
             <MissionTimeline
               kind={visibleKind}
               compact
-              comparison={selected === "joint" && state.proposal ? state.activeKind : undefined}
+              comparison={
+                selected === "joint" && state.comparisonReady && state.proposal
+                  ? state.activeKind
+                  : undefined
+              }
             />
           </Panel>
           <Panel
@@ -389,33 +420,33 @@ function Planner() {
             meta={<span className="studio-unit">kW</span>}
           >
             <Chart
-              rows={selected === "joint" ? rows : stationTrajectory(state, visibleKind, false, 48)}
+              rows={rows}
               height={190}
-              event={state.inputs.weatherSeverity > 0 ? state.inputs.weatherHour : false}
+              event={
+                forecastCase(state).inputs.weatherSeverity > 0
+                  ? forecastCase(state).inputs.weatherHour
+                  : false
+              }
             />
           </Panel>
           <div className="studio-small-multiples">
             <Panel title="Battery trajectory" meta={<span className="studio-unit">kWh</span>}>
-              <Chart
-                rows={stationTrajectory(state, visibleKind, false, 48)}
-                mode="battery"
-                height={120}
-              />
+              <Chart rows={rows} mode="battery" height={120} />
             </Panel>
             <Panel title="Fuel trajectory" meta={<span className="studio-unit">L</span>}>
-              <Chart
-                rows={stationTrajectory(state, visibleKind, false, 48)}
-                mode="fuel"
-                height={120}
-              />
+              <Chart rows={rows} mode="fuel" height={120} />
             </Panel>
           </div>
         </div>
         <div className="studio-stack">
           <ApprovalPanel />
-          <Panel title="Protected operating limits">
+          <Panel title="Planning attention">
+            <AttentionQueue scope="planning" compact />
+          </Panel>
+          <Panel title="Configured operating constraints">
             <ConstraintList />
-            <div className="studio-planning-explanation">
+            <details className="recording-advanced">
+              <summary>Planning basis and checks</summary>
               <strong>
                 {candidate === "adaptive"
                   ? "Response to asset degradation"
@@ -430,7 +461,7 @@ function Planner() {
                     ? "Re-evaluate field access, resource overlaps and fuel exposure using the revised weather and arrival assumptions. Proposed timing is shown on the schedule, not imposed on current execution."
                     : "The original laboratory and atmospheric study overlap on the instrument team. Joint scheduling separates their windows without dropping the laboratory mission."}
               </p>
-            </div>
+            </details>
           </Panel>
         </div>
       </div>
@@ -460,13 +491,12 @@ function ConstraintList() {
 function Outlook() {
   const { state } = usePresentation();
   const [horizon, setHorizon] = useState(48);
-  const updated = stationTrajectory(state, state.activeKind, false, horizon);
-  const points = forecastRows(state, horizon);
-  const o = resourceOutlook(state, state.activeKind);
-  const event = environmentalPoint(state.inputs.weatherHour, state.inputs);
-  const field = missionSchedule(state.proposal?.kind ?? activeCandidateKind(state), state).find(
-    (m) => m.id === "field",
-  )!;
+  const published = forecastCase(state);
+  const updated = stationTrajectory(published, state.activeKind, false, horizon);
+  const points = forecastRows(published, horizon);
+  const o = resourceOutlook(published, state.activeKind);
+  const event = environmentalPoint(published.inputs.weatherHour, published.inputs);
+  const field = state.activeSchedule.find((m) => m.id === "field")!;
   return (
     <>
       <PageTitle
@@ -480,24 +510,30 @@ function Outlook() {
           </Link>
         }
       />
+      <PreparationStatus />
+      {state.preparation?.kind === "forecast" && (
+        <p role="status" className="recording-plan-basis">
+          New inputs received. Previous published outlook remains below until the refresh completes.
+        </p>
+      )}
       <div className="studio-outlook-metrics">
         <Metric
           label="Weather outlook"
-          value={state.inputs.weatherSeverity > 0 ? "Deteriorating" : "Stable"}
+          value={published.inputs.weatherSeverity > 0 ? "Deteriorating" : "Stable"}
           detail={
-            state.outlookChanged
-              ? `Weather front ${stationTime(state.inputs.weatherHour)}`
+            published.inputs.weatherSeverity > 0
+              ? `Weather front ${stationTime(published.inputs.weatherHour)}`
               : "Usable field conditions through H48"
           }
           icon={Wind}
-          accent={state.outlookChanged ? "amber" : "mint"}
+          accent={published.inputs.weatherSeverity > 0 ? "amber" : "mint"}
         />
         <Metric
-          label="Usable early field window"
+          label="Active field commitment"
           value={
             field.deferred ? "Unavailable" : `H${field.start}–H${field.start + field.duration}`
           }
-          detail="Mission opportunity · next dispatch"
+          detail="Issued schedule · inspect forecast restrictions"
           icon={Clock3}
           accent="cyan"
         />
@@ -505,8 +541,8 @@ function Outlook() {
           label="Resupply projection"
           value={`Day ${o.arrivalDay}`}
           detail={
-            state.inputs.resupplyDelay
-              ? `+${state.inputs.resupplyDelay} days against baseline`
+            published.inputs.resupplyDelay
+              ? `+${published.inputs.resupplyDelay} days against baseline`
               : "Baseline arrival assumption"
           }
           icon={Fuel}
@@ -569,17 +605,23 @@ function Outlook() {
                   />
                   <Line
                     dataKey="expected"
-                    name="Updated outlook"
+                    name="Current published outlook"
                     stroke="#62d5ae"
                     strokeWidth={2}
                     dot={false}
                     isAnimationActive={false}
                   />
-                  <ReferenceLine
-                    x={state.inputs.weatherHour}
-                    stroke="#edb45f"
-                    label={{ value: `H${state.inputs.weatherHour}`, fill: "#edb45f", fontSize: 10 }}
-                  />
+                  {published.inputs.weatherSeverity > 0 && (
+                    <ReferenceLine
+                      x={published.inputs.weatherHour}
+                      stroke="#edb45f"
+                      label={{
+                        value: `H${published.inputs.weatherHour}`,
+                        fill: "#edb45f",
+                        fontSize: 10,
+                      }}
+                    />
+                  )}
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -608,7 +650,7 @@ function Outlook() {
               </span>
             }
           >
-            <AlertList />
+            <AttentionQueue scope="forecast" compact />
             <div className="studio-planning-explanation">
               <strong>Changed assumptions do not activate a plan.</strong>
               <p>
@@ -629,7 +671,11 @@ function Outlook() {
               </strong>
             </div>
             <div className="studio-assumption-row">
-              <span>Front temperature / wind</span>
+              <span>
+                {published.inputs.weatherSeverity > 0
+                  ? "Front temperature / wind"
+                  : "Baseline outlook temperature / wind"}
+              </span>
               <strong>
                 {format(event.temperature, 1)}°C · {format(event.wind, 1)} km/h
               </strong>
@@ -637,17 +683,19 @@ function Outlook() {
             <div className="studio-assumption-row">
               <span>Early field restriction</span>
               <strong>
-                {state.inputs.weatherSeverity > 0.5 ? "H10–H14 · 1.4 km visibility" : "None"}
+                {published.inputs.weatherSeverity > 0.5 ? "H10–H14 · 1.4 km visibility" : "None"}
               </strong>
             </div>
             <div className="studio-assumption-row">
               <span>Visibility</span>
-              <strong>{format(event.visibility, 1)} km at expected front</strong>
+              <strong>{format(event.visibility, 1)} km in published outlook</strong>
             </div>
             <div className="studio-assumption-row">
               <span>Resupply shift</span>
               <strong>
-                {state.inputs.resupplyDelay ? `+${state.inputs.resupplyDelay} days` : "None"}
+                {published.inputs.resupplyDelay
+                  ? `+${published.inputs.resupplyDelay} days`
+                  : "None"}
               </strong>
             </div>
             <p className="studio-footnote">
@@ -675,7 +723,11 @@ function Monitor() {
     observed: r.g1,
     expected: reference[i]!.g1,
   }));
-  const paused = !!state.proposal || state.hour >= STATION.playbackEnd;
+  const paused =
+    !!state.proposal ||
+    !!state.preparation ||
+    state.responseRequired ||
+    state.hour >= STATION.playbackEnd;
   return (
     <>
       <PageTitle
@@ -683,14 +735,19 @@ function Monitor() {
         title="Station Monitoring"
         action={
           <span className={`studio-chip ${state.proposal ? "warn" : "good"}`}>
-            {state.proposal
-              ? "PAUSED FOR DECISION"
-              : state.hour >= STATION.playbackEnd
-                ? "CASE COMPLETE"
-                : "READY TO ADVANCE"}
+            {state.preparation
+              ? "ASSESSMENT / PREPARATION"
+              : state.responseRequired
+                ? "RESPONSE REQUIRED"
+                : state.proposal
+                  ? "PAUSED FOR DECISION"
+                  : state.hour >= STATION.playbackEnd
+                    ? "CASE COMPLETE"
+                    : "READY TO ADVANCE"}
           </span>
         }
       />
+      <PreparationStatus />
       <div className="studio-playback">
         <div>
           <span className="studio-eyebrow">OPERATING CLOCK</span>
@@ -734,7 +791,11 @@ function Monitor() {
         <span className="studio-playback-note">
           {state.proposal
             ? "Review, activate or reject the revision before continuing."
-            : "Only explicit advancement changes observed station time."}
+            : state.responseRequired
+              ? "Open Mission Planner to assess a response before continuing."
+              : state.preparation
+                ? "Preparation in progress; operating clock retained."
+                : "Only explicit advancement changes observed station time."}
         </span>
       </div>
       <div className="studio-kpi-grid">
@@ -873,9 +934,11 @@ function Monitor() {
           </Panel>
         </div>
         <div className="studio-stack">
-          <ApprovalPanel />
+          <Panel title="Planning response">
+            <DecisionLink />
+          </Panel>
           <Panel title="Active conditions">
-            <AlertList />
+            <AttentionQueue scope="monitoring" compact />
           </Panel>
           <Panel
             title="Event history"

@@ -2,27 +2,32 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import * as m from "../src/lib/presentation-model.ts";
+import * as w from "../src/lib/recording-workflow.ts";
 
-let state = m.initialPresentation();
+let state = w.initializeWorkflow();
 const checkpoints = [];
 function capture(name) {
-  const future = m.stationTrajectory(state, state.activeKind, false, 144);
+  const future = m.stationTrajectory(w.forecastCase(state), state.activeKind, false, 144);
   checkpoints.push({
     name,
     hour: state.hour,
     timestamp: m.stationTime(state.hour),
     assumptions: state.inputs,
+    publishedInputs: w.forecastCase(state).inputs,
     activeVersion: state.activeVersion,
     activeKind: state.activeKind,
     current: m.currentStation(state),
     activeSchedule: state.activeSchedule,
     proposal: state.proposal,
-    outlook: m.resourceOutlook(state, state.activeKind),
+    preparation: state.preparation,
+    attention: state.attention,
+    forecastReadyBasis: state.forecastReadyBasis,
+    outlook: m.resourceOutlook(w.forecastCase(state), state.activeKind),
     adverseLimits: m.planAssessment(state, state.activeSchedule, state.activeKind),
     missions: state.activeSchedule.map((p) => ({ id: p.id, status: m.missionProgress(state, p) })),
     observed: state.observations,
     projection: future,
-    forecast: m.forecastRows(state, 144),
+    forecast: m.forecastRows(w.forecastCase(state), 144),
     connectivity: {
       uplink: state.uplink,
       forecastHour: state.externalForecastHour,
@@ -33,20 +38,25 @@ function capture(name) {
   });
 }
 function action(type, extra = {}) {
-  state = m.presentationReducer(state, { type, ...extra });
+  state = w.workflowReducer(state, { type, ...extra });
+}
+function complete() {
+  const task = state.preparation;
+  if (!task) throw Error("No preparation pending");
+  action("complete-task", { token: task.token, elapsedMs: w.PREPARATION_MS[task.kind] });
 }
 function authorize() {
   if (!state.proposal?.feasible) throw Error("Recording branch has no feasible proposal");
   for (const type of ["review", "approve", "activate"]) action(type);
 }
 capture("baseline-original");
-action("generate");
-capture("baseline-joint-proposed");
-authorize();
-capture("baseline-joint-active");
 action("apply-outlook");
-capture("future-inputs-applied");
+capture("future-inputs-received-forecast-preparing");
+complete();
+capture("forecast-ready-active-v1");
 action("generate");
+capture("joint-proposal-preparing");
+complete();
 capture("weather-joint-proposed");
 authorize();
 capture("weather-joint-active");
@@ -55,8 +65,14 @@ action("observe-weather");
 capture("weather-observed");
 action("advance", { hours: 2 });
 action("generator-event");
-capture("generator-observed-proposal");
+capture("generator-observed-assessment-preparing");
+complete();
+capture("generator-response-required");
 action("uplink");
+action("generate");
+capture("adaptive-proposal-preparing");
+complete();
+capture("adaptive-proposal-ready");
 authorize();
 capture("adaptive-active-link-lost");
 action("advance", { hours: 22 });
@@ -86,7 +102,8 @@ for (const point of state.observations) {
     throw Error(`Invalid resource H${point.hour}`);
 }
 const result = {
-  schema: 2,
+  schema: 3,
+  preparationPacing: w.PREPARATION_MS,
   case: "Fictional coastal summer station / Alpha",
   config: m.STATION,
   checkpoints,

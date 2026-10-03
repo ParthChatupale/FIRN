@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { ArrowUpRight, CloudSnow, Fuel, RotateCcw, Zap } from "lucide-react";
 import { usePresentation } from "@/lib/presentation-context";
+import { forecastCase } from "@/lib/recording-workflow";
 import {
   arrivalHour,
   currentStation,
@@ -36,9 +37,7 @@ import {
 
 export function RecordingSimulator() {
   const { state, dispatch } = usePresentation();
-  const [draft, setDraft] = useState<ScenarioInputs>(() =>
-    state.outlookChanged ? state.inputs : { ...RECORDING_INPUTS },
-  );
+  const [draft, setDraft] = useState<ScenarioInputs>(() => ({ ...state.inputs }));
   const [view, setView] = useState("power");
   const [basis, setBasis] = useState("applied");
   const [horizon, setHorizon] = useState(48);
@@ -47,7 +46,7 @@ export function RecordingSimulator() {
   const [reset, setReset] = useState(false);
   const c = currentStation(state);
   const preview = { ...state, inputs: draft };
-  const selected = basis === "preview" ? preview : state;
+  const selected = basis === "preview" ? preview : forecastCase(state);
   const rows =
     basis === "observed"
       ? state.observations
@@ -87,7 +86,7 @@ export function RecordingSimulator() {
             className="studio-button"
             onClick={() => {
               dispatch({ type: "reset" });
-              setDraft({ ...RECORDING_INPUTS });
+              setDraft({ ...BASE_INPUTS });
               setReset(false);
             }}
           >
@@ -347,6 +346,7 @@ export function RecordingSimulator() {
                   className="studio-button secondary"
                   disabled={
                     !!state.proposal ||
+                    !!state.preparation ||
                     !!state.observedWeather ||
                     state.hour < state.inputs.weatherHour ||
                     state.inputs.weatherSeverity === 0
@@ -375,7 +375,12 @@ export function RecordingSimulator() {
                 </label>
                 <button
                   className="studio-button secondary"
-                  disabled={!!state.proposal || !!state.generatorEvent || state.hour < 26}
+                  disabled={
+                    !!state.proposal ||
+                    !!state.preparation ||
+                    !!state.generatorEvent ||
+                    state.hour < 26
+                  }
                   onClick={() => dispatch({ type: "generator-event", capacity })}
                 >
                   {state.generatorEvent ? "Event recorded" : "Apply capacity loss"}
@@ -385,14 +390,24 @@ export function RecordingSimulator() {
             <div className="studio-action-row">
               <button
                 className="studio-button secondary"
-                disabled={!!state.proposal || state.hour >= STATION.playbackEnd}
+                disabled={
+                  !!state.proposal ||
+                  !!state.preparation ||
+                  state.responseRequired ||
+                  state.hour >= STATION.playbackEnd
+                }
                 onClick={() => dispatch({ type: "advance", hours: 1 })}
               >
                 +1 hour
               </button>
               <button
                 className="studio-button secondary"
-                disabled={!!state.proposal || state.hour >= STATION.playbackEnd}
+                disabled={
+                  !!state.proposal ||
+                  !!state.preparation ||
+                  state.responseRequired ||
+                  state.hour >= STATION.playbackEnd
+                }
                 onClick={() => dispatch({ type: "advance", hours: 6 })}
               >
                 +6 hours
@@ -415,7 +430,7 @@ export function RecordingSimulator() {
                 Resupply delay
               </h3>
               <label>
-                Delay beyond baseline<strong>{draft.resupplyDelay} days</strong>
+                Additional delay<strong>+{draft.resupplyDelay} days</strong>
                 <input
                   aria-label="Resupply delay days"
                   type="range"
@@ -426,24 +441,38 @@ export function RecordingSimulator() {
                   onChange={(e) => set("resupplyDelay", Number(e.target.value))}
                 />
               </label>
-              <small>Baseline delivery {stationTime(STATION.resupplyHour)}</small>
+              <div className="recording-dates">
+                <span>
+                  Original arrival<strong>{stationTime(STATION.resupplyHour)}</strong>
+                </span>
+                <span>
+                  Revised arrival / draft<strong>{stationTime(arrivalHour(preview))}</strong>
+                </span>
+                <span>
+                  Applied arrival<strong>{stationTime(arrivalHour(state))}</strong>
+                </span>
+              </div>
             </div>
             <div className="recording-input-group">
               <h3>
                 <CloudSnow size={17} />
-                Weather deterioration
+                Future weather condition
               </h3>
               <label>
-                Front severity<strong>{format(draft.weatherSeverity * 100)}%</strong>
-                <input
-                  aria-label="Weather severity percent"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={draft.weatherSeverity * 100}
-                  onChange={(e) => set("weatherSeverity", Number(e.target.value) / 100)}
-                />
+                Condition
+                <select
+                  aria-label="Future weather condition"
+                  value={draft.weatherSeverity}
+                  onChange={(e) => set("weatherSeverity", Number(e.target.value))}
+                >
+                  <option value={0}>Baseline coastal conditions</option>
+                  <option value={0.5}>Moderate weather front</option>
+                  <option value={0.85}>Storm front</option>
+                  <option value={1}>Severe storm front</option>
+                  {![0, 0.5, 0.85, 1].includes(draft.weatherSeverity) && (
+                    <option value={draft.weatherSeverity}>Custom front</option>
+                  )}
+                </select>
               </label>
               <label>
                 Expected onset
@@ -459,18 +488,49 @@ export function RecordingSimulator() {
                   ))}
                 </select>
               </label>
-              <label>
-                Adverse renewable allowance<strong>{format(draft.uncertainty * 100)}%</strong>
-                <input
-                  aria-label="Adverse renewable allowance percent"
-                  type="range"
-                  min="5"
-                  max="40"
-                  step="1"
-                  value={draft.uncertainty * 100}
-                  onChange={(e) => set("uncertainty", Number(e.target.value) / 100)}
-                />
-              </label>
+              <div className="recording-weather-deltas">
+                {(
+                  [
+                    ["Wind", "wind", "km/h"],
+                    ["Temperature", "temperature", "°C"],
+                    ["Visibility", "visibility", "km"],
+                    ["Renewables", "renewable", "kW"],
+                  ] as const
+                ).map(([name, key, unit]) => {
+                  const original = environmentalPoint(draft.weatherHour, BASE_INPUTS),
+                    revised = environmentalPoint(draft.weatherHour, draft);
+                  return (
+                    <div key={key}>
+                      <span>{name} / baseline → draft</span>
+                      <strong>
+                        {format(original[key], 1)} → {format(revised[key], 1)} {unit}
+                      </strong>
+                    </div>
+                  );
+                })}
+              </div>
+              <details className="recording-advanced">
+                <summary>Downside planning assumptions</summary>
+                <label>
+                  Renewable reduction in downside case
+                  <strong>{format(draft.uncertainty * 100)}%</strong>
+                  <input
+                    aria-label="Downside renewable reduction percent"
+                    type="range"
+                    min="5"
+                    max="40"
+                    step="1"
+                    value={draft.uncertainty * 100}
+                    onChange={(e) => set("uncertainty", Number(e.target.value) / 100)}
+                  />
+                </label>
+                <small>
+                  Retains {format((1 - draft.uncertainty) * 100)}% of nominal renewable availability
+                  before adverse weather adjustments. This also increases demand by{" "}
+                  {format(draft.uncertainty * 12, 1)}% and slightly intensifies the front; not a
+                  learned confidence interval.
+                </small>
+              </details>
             </div>
             <div className="studio-action-row">
               <button className="studio-button quiet" onClick={() => setDraft({ ...BASE_INPUTS })}>
@@ -478,9 +538,12 @@ export function RecordingSimulator() {
               </button>
               <button
                 className="studio-button quiet"
-                onClick={() => setDraft({ ...RECORDING_INPUTS })}
+                onClick={() => {
+                  setDraft({ ...RECORDING_INPUTS });
+                  setBasis("preview");
+                }}
               >
-                Recording case
+                Storm + delayed resupply
               </button>
             </div>
             <button
@@ -500,7 +563,7 @@ export function RecordingSimulator() {
               </p>
             )}
             <Link to="/mission-planner" className="studio-inline-link">
-              Compare joint response <ArrowUpRight size={14} />
+              Open planning workspace <ArrowUpRight size={14} />
             </Link>
           </Panel>
           <Panel title="Case state">
@@ -513,6 +576,15 @@ export function RecordingSimulator() {
             <div className="studio-assumption-row">
               <span>Assumptions</span>
               <strong>Revision {state.assumptionVersion}</strong>
+            </div>
+            <div className="studio-assumption-row">
+              <span>Active plan issued against</span>
+              <strong>
+                Arrival{" "}
+                {stationTime(
+                  STATION.resupplyHour + state.activations.at(-1)!.inputs.resupplyDelay * 24,
+                )}
+              </strong>
             </div>
             <div className="studio-assumption-row">
               <span>Observed intervals</span>

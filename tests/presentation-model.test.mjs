@@ -17,7 +17,9 @@ function event(capacity = 10) {
   s = reduce(s, { type: "advance", hours: 24 });
   s = reduce(s, { type: "observe-weather" });
   s = reduce(s, { type: "advance", hours: 2 });
-  return reduce(s, { type: "generator-event", capacity });
+  s = reduce(s, { type: "generator-event", capacity });
+  if (capacity !== 25) s = reduce(s, { type: "generate" });
+  return s;
 }
 function balance(rows, arrival) {
   for (let i = 0; i < rows.length; i++) {

@@ -556,7 +556,8 @@ export function planAssessment(s: PresentationState, schedule: Mission[], kind: 
     true,
   ).slice(s.hour);
   const problems: string[] = [];
-  if (conflictCount(schedule)) problems.push("Shared instrument-team windows overlap");
+  if (conflictCount(schedule.filter((m) => !m.deferred && m.start + m.duration > s.hour)))
+    problems.push("Shared instrument-team windows overlap");
   if (
     schedule.some(
       (m) =>
@@ -587,7 +588,7 @@ export function resourceOutlook(s: PresentationState, kind: PlanKind) {
     arrivalDay: arrivalHour(s) / 24,
     fuelAtResupply: round(reference.fuel - reference.fuelRate),
     minimumBattery: Math.min(...rows.slice(s.hour).map((r) => r.battery)),
-    fuelUsed: round(currentStation(s).fuel - reference.fuel),
+    fuelUsed: round(currentStation(s).fuel - reference.fuel + reference.fuelRate),
     missions: schedule.filter((m) => !m.deferred).length,
     conflicts: conflictCount(schedule),
   };
@@ -833,9 +834,8 @@ export function presentationReducer(
       `Generator 01 capacity reduced to ${capacity} kW`,
       `Available station diesel capacity ${capacity + STATION.generatorTwo} kW; inspect remaining work.`,
     );
-    return planAssessment(next, next.activeSchedule, next.activeKind).feasible
-      ? next
-      : presentationReducer(next, { type: "generate" });
+    // Observation and response preparation are separate operator-visible stages.
+    return next;
   }
   if (a.type === "uplink")
     return record(
@@ -899,12 +899,19 @@ export function monitoringReference(s: PresentationState): StationPoint[] {
 }
 export function operationalAlerts(s: PresentationState) {
   const alerts: { title: string; detail: string; severity: "warning" | "good" }[] = [];
-  if (s.inputs.weatherSeverity > 0)
+  const restrictedHour = Array.from(
+    { length: Math.max(0, 49 - s.hour) },
+    (_, i) => s.hour + i,
+  ).find((h) => {
+    const e = environmentalPoint(h, s.inputs);
+    return e.visibility < 2 || e.wind > 55;
+  });
+  if (restrictedHour !== undefined)
     alerts.push({
       title: s.observedWeather ? "Weather restriction observed" : "Weather window narrowing",
       detail: s.observedWeather
         ? `Visibility ${currentStation(s).visibility} km · wind ${currentStation(s).wind.toFixed(0)} km/h`
-        : `Early field restriction H10–H14 · front ${stationTime(s.inputs.weatherHour)}`,
+        : `Restricted field conditions from ${stationTime(restrictedHour)}`,
       severity: "warning",
     });
   if (s.generatorEvent)
@@ -919,7 +926,7 @@ export function operationalAlerts(s: PresentationState) {
       detail: `Arrival ${stationTime(arrivalHour(s))}`,
       severity: "warning",
     });
-  const conflicts = conflictCount(s.activeSchedule);
+  const conflicts = remainingConflictCount(s);
   if (conflicts)
     alerts.push({
       title: "Shared-resource conflicts",
@@ -928,11 +935,16 @@ export function operationalAlerts(s: PresentationState) {
     });
   if (!alerts.length)
     alerts.push({
-      title: "Operating margins within limits",
-      detail: "No changed assumptions or resource overlaps",
+      title: "No outstanding condition notices",
+      detail: "Inspect resource projections and configured limits separately",
       severity: "good",
     });
   return alerts;
+}
+export function remainingConflictCount(s: PresentationState) {
+  return conflictCount(
+    s.activeSchedule.filter((m) => !m.deferred && m.start + m.duration > s.hour),
+  );
 }
 export function stationTime(hour: number) {
   return (

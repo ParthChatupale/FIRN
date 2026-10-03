@@ -1,39 +1,43 @@
 # FIRN presentation workspace
 
-The implemented recording workflow is governed by [delivery goals](recording-delivery-goals.md), the [fourteen-scene narration/action script](demonstration-script.md) and the [shared model assumptions/results](recording-model.md). Earlier fixed H0/H24/H26/H36 sequencing is superseded.
+Current implementation follows [rehearsal corrections](rehearsal-corrections-plan.md), the [thirteen-scene script](demonstration-script.md) and [model assumptions/results](recording-model.md). Earlier H36 closing and V2/V3/V4 choreography are superseded.
 
-## Boundary and entry points
+## Boundary and entry
 
-The recording mode lives in the original `src/` app. It uses `firn:presentation:v2` browser storage, not PostgreSQL or the API. Existing connected routes, backend files, login/settings and the separate `frontend/` draft are preserved. This does not replace the engineering roadmap or count as backend validation.
+Recording mode lives in the original `src/` app. Shared workflow uses `firn:presentation:v3` browser storage; legacy v2 state is validated when restoring and is not deleted. Backend workflow storage is separate.
 
-- `/?workspace=presentation` — recording mode (also the default for its seven routes).
-- `/?workspace=backend` — retained API-connected workspace; still requires its usual services.
-- Start with `npm run dev` and use Vite's printed port. This verification used `http://localhost:3001/`.
+- `/?workspace=presentation`: recording mode, also the default for its seven routes.
+- `/?workspace=backend`: retained API-connected workspace, requiring its usual services.
+- `npm run dev`: use Vite’s printed port.
 
-This is modeled forecasting, bounded schedule search and browser-local authorization, not measured MILP performance, calibrated prediction, authenticated safety control, real sensor telemetry or remote synchronization. Sources exposes that boundary without covering the operator view in explanatory banners.
+No backend files, PostgreSQL schema/migrations, login/settings or separate `frontend/` draft changes are part of these corrections.
 
-## Continuous case and layout
+## Continuous case
 
-Fictional coastal summer station, 15 January 2026 06:00 UTC. Original V1 → baseline joint V2 → revised weather/logistics V3 → adaptive V4. Future inputs change projections only. Observed weather H24 and independent generator derating H26 change current interval flows while preserving opening resources and completed observations. Continue to H48 for outcomes.
+Fictional coastal summer station, 15 January 2026 06:00 UTC. V1 original → apply storm/delay outlook → request/authorize joint V2 → observed weather H24 → independent generator derating H26 → assess/request/authorize adaptive V3 → H48 outcomes.
 
-| Screen          | Evidence / functional controls                                                                                                                                                                                            |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Operations      | Current weather/clock, reserve/fuel/delivery, supply-demand graph, resource small multiples, mission windows, assets, risk/decision rail; observed/outlook toggle                                                         |
-| Simulator       | Current-state slab, power/weather/resources/missions views, bounded resupply and weather inputs, input preview/applied/history, onset/horizon/adverse controls, before/after exposure, distinct observed events and reset |
-| Planner         | Same-input original/energy-first/joint comparison, interval Gantt, dispatch and resource trajectories; propose/review/approve/reject/activate; no-go disables approval                                                    |
-| Look ahead      | Nominal/adverse environmental assumptions, baseline/revised availability, weather restrictions and active-schedule resource exposure                                                                                      |
-| Monitoring      | Explicit interval advance, observed weather and independent derating, frozen pre-event reference, actual mission outcomes, event history and pending approval                                                             |
-| Energy & Assets | Nameplate vs available capacity, current generation/storage, modeled load breakdown and configured shared resources                                                                                                       |
-| Decision Log    | Actual input/event/proposal/review/approval/activation records; search, version filter and detail                                                                                                                         |
+Future drafts do not mutate the applied case. Applied forecast revisions preserve observations and current inventory, with the previous published outlook retained while preparing. Generation captures the current basis; alternatives become visible after preparation. Activation can change current dispatch, not opening resources or completed history.
 
-Desktop: dominant data area plus bounded operational rail. Compact strategy comparison and Gantt keep mission timing, dispatch and human review visible together at 1440×900. Operations retains a one-glance core. Narrow views reflow and scroll; do not squeeze all operational evidence into a phone-sized viewport. Graphs use separate units for energy/fuel/weather, event markers and hourly tables rather than decorative animations.
+| Screen | Purpose |
+| --- | --- |
+| Operations | Current station data, resource outlook, commitments and compact actionable attention; no authorization |
+| Simulator | Baseline/draft/applied inputs, physical comparisons, heterogeneous views, distinct observations and scoped reset |
+| Look ahead | Normal forecast first, then published revised outlook and active-plan exposure; forecast-context attention only |
+| Mission Planner | Active schedule first; Generate, comparisons, dispatch, changes, review/approve/reject/activate |
+| Monitoring | Clock, observed/reference comparisons, mission progress and independent event assessment; links to Planner |
+| Energy & Assets | Capacity, generation/storage, modeled loads and resources |
+| Decision Log | Inputs, events, proposal and human-decision lineage |
 
-Connectivity is a **non-modal tray** with no background scrim or focus trap. Local availability, external link, forecast age/receipt, contact and decision acknowledgement are separate. Loss queues actual actions; reconnection alone refreshes neither forecast nor acknowledgements. Physical sensor adapters remain planned/unconnected.
+## Preparation and attention
 
-## Verification / rehearsal
+Shared workflow state owns tasks across navigation. Minimum visible intervals: proposal 2.5s, forecast 1s, event assessment 1.2s. These are configured presentation intervals, not backend benchmarks. Stale completions cannot publish; interrupted/failed work supports retry.
 
-The current [verification record](verification/recording-case/review.md) supersedes the [historical v1 record](verification/presentation-workspace/review.md). Model tests include parameterized balance/delivery cases, severe/moderate/full-outage branches, history continuity, completed work, no-go approval guards and independent connectivity clocks. Existing connected-UI regression tests are retained.
+Input/event receipt and result readiness are separate. Alerts retain station time and sequencing metadata. Acknowledging an item means seen; condition resolution, proposal approval and external synchronization remain distinct operations. Upcoming conflicts expire from the current queue once passed or resolved; mild weather cannot claim a restriction without crossing configured limits.
 
-Follow the master script. To restart, Simulator → Reset case → confirm, then Operations. Reset touches only this recording case. For recording, avoid editing source during rehearsal: development hot reload may close a tray, although the case remains persisted.
+Connectivity is a non-modal tray. Link state, forecast age/receipt and outbox acknowledgement use separate clocks. Physical sensor adapters remain unconnected. Sources preserves that boundary without covering operator views with explanatory banners.
 
-Final visual acceptance remains a user checkpoint. Passing tests and an agent rehearsal are not acceptance of the design or real-station readiness.
+## Verification and next rehearsal
+
+See [current verification](verification/rehearsal-corrections/review.md). Prior [recording screenshots](verification/recording-case/review.md) are historical.
+
+The revised browser rehearsal was blocked by the app’s browser-access policy, so visual layout and actual UI timing have not been re-verified. Reset the recording case and follow the script. Check desktop glanceability, narrow reflow, notification access and preparation across navigation before approving filming. Passing model tests does not establish visual acceptance or real-station readiness.

@@ -19,6 +19,7 @@ import {
   missionProgress,
   missionSchedule,
   resourceOutlook,
+  stationTrajectory,
   STATION,
   type Mission,
   type PlanKind,
@@ -423,6 +424,25 @@ export function ApprovalPanel({ compact = false }: { compact?: boolean }) {
           </div>
           {!compact && (
             <div className="studio-decision-deltas">
+              <div>
+                <span>Projected fuel consumption · next 48h</span>
+                <strong>
+                  {format(
+                    stationTrajectory(state, state.activeKind, false, state.hour + 48)
+                      .filter((r) => r.hour >= state.hour && r.hour < state.hour + 48)
+                      .reduce((n, r) => n + r.fuelRate, 0),
+                    1,
+                  )}{" "}
+                  →{" "}
+                  {format(
+                    stationTrajectory(state, p.kind, false, state.hour + 48)
+                      .filter((r) => r.hour >= state.hour && r.hour < state.hour + 48)
+                      .reduce((n, r) => n + r.fuelRate, 0),
+                    1,
+                  )}{" "}
+                  L
+                </strong>
+              </div>
               <div>
                 <span>Fuel at resupply</span>
                 <strong>

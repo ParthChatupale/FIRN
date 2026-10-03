@@ -24,6 +24,7 @@ import { usePresentation } from "@/lib/presentation-context";
 import { currentStation, stationTime } from "@/lib/presentation-model";
 import { PresentationScreen } from "./presentation-workspace";
 import { RecordingConnectivity } from "./recording-connectivity";
+import { NotificationButton, PreparationStatus } from "./recording-attention";
 
 const nav = [
   { to: "/", label: "Operations", icon: LayoutDashboard },
@@ -148,6 +149,7 @@ export function PresentationShell() {
           <Link to="/login" className="studio-avatar" aria-label="Open existing operator profile">
             OP
           </Link>
+          <NotificationButton onConnectivity={() => setDrawer("connection")} />
         </header>
         <main id="station-workspace" className="studio-main">
           {storageWarning && (
@@ -157,6 +159,10 @@ export function PresentationShell() {
             </p>
           )}
           <PresentationScreen path={path} />
+          {state.preparation &&
+            path !== "/mission-planner" &&
+            path !== "/forecast" &&
+            path !== "/monitoring" && <PreparationStatus />}
         </main>
       </div>
       {drawer === "connection" && <RecordingConnectivity close={() => setDrawer(null)} />}
