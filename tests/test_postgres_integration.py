@@ -11,6 +11,31 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.db import get_db
 from backend.app.main import app
+from uuid import uuid4
+
+
+def test_outlook_and_idempotent_robust_proposal_in_postgres(postgres_api_client):
+    client = postgres_api_client
+    run = client.post("/api/simulation-runs", json={"scenario": "normal", "days": 2, "seed": 51}).json()
+    outlook = client.get(f"/api/simulation-runs/{run['id']}/outlook")
+    assert outlook.status_code == 200, outlook.text
+    payload = {"source_simulation_run_id": run["id"], "request_id": str(uuid4()), "planning_mode": "robust"}
+    first = client.post("/api/plan-proposals", json=payload)
+    assert first.status_code == 201, first.text
+    retry = client.post("/api/plan-proposals", json=payload)
+    assert retry.status_code == 201, retry.text
+    assert retry.json()["id"] == first.json()["id"]
+    assert first.json()["plan_snapshot"]["planning_context"]["config_fingerprint"] == outlook.json()["config_fingerprint"]
+    conflict = client.post("/api/plan-proposals", json={**payload, "seed": 52})
+    assert conflict.status_code == 409
+    parent = first.json()
+    mission = next(m for m in parent["plan_snapshot"]["schedule"] if m["mission_id"] == "ice-core")
+    edit_payload = {"mission_start_hours": {"ice-core": mission["start_hour"] + 1}, "request_id": str(uuid4())}
+    endpoint = f"/api/plans/{parent['id']}/edits"
+    edit = client.post(endpoint, json=edit_payload)
+    assert edit.status_code == 201, edit.text
+    retry_edit = client.post(endpoint, json=edit_payload)
+    assert retry_edit.json()["id"] == edit.json()["id"]
 
 
 @pytest.fixture
@@ -129,3 +154,27 @@ def test_monitoring_clock_persists_on_postgres(postgres_api_client: TestClient) 
     fetched = postgres_api_client.get(f"/api/monitoring-sessions/{created.json()['id']}")
     assert fetched.status_code == 200
     assert fetched.json()["latest_observation"]["hour"] == 0
+
+
+def test_checkpoint_activation_continuation_persists_on_postgres(postgres_api_client):
+    client = postgres_api_client
+    run = client.post("/api/simulation-runs", json={"scenario":"low_renewable","days":2,"seed":73}).json()
+    proposal = client.post("/api/plan-proposals", json={"source_simulation_run_id":run["id"]}).json()
+    for action in ("approve", "activate"):
+        result = client.post(f"/api/plans/{proposal['id']}/actions", json={"action":action})
+        assert result.status_code == 200, result.text
+    session = client.post("/api/monitoring-sessions", json={"plan_version_id":proposal["id"],"simulation_run_id":run["id"]}).json()
+    decision = client.post(f"/api/monitoring-sessions/{session['id']}/advance",json={"hours":24,"expected_hour":-1}).json()
+    assert decision["current_hour"] == 1
+    replacement = decision["pending_proposal_id"]
+    for action in ("review", "approve", "activate"):
+        result = client.post(f"/api/plans/{replacement}/actions", json={"action":action,"actor":"pg-operator"})
+        assert result.status_code == 200, result.text
+    resumed = client.post(f"/api/monitoring-sessions/{session['id']}/advance", json={"hours":1,"expected_hour":1})
+    assert resumed.status_code == 200, resumed.text
+    fetched = client.get(f"/api/monitoring-sessions/{session['id']}").json()
+    assert fetched["current_hour"] == 2
+    assert fetched["plan_version_id"] == replacement
+    assert fetched["trajectory"][:2] == decision["trajectory"][:2]
+    assert fetched["execution_policy"] == "generator_first_approved_missions_v1"
+    assert any(event["action"] == "execution_resumed" for event in fetched["events"])

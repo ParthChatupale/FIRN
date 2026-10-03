@@ -45,14 +45,25 @@ The expected local connection is:
 postgresql+psycopg://firn_app:<local-password>@127.0.0.1:5432/firn_db
 ```
 
-## 4. Apply migrations and run the API
+## 4. Run the API from WSL
 
-The local `firn_db` is currently at revision `0002_plan_management`; Phase 6 adds `0003_monitoring_replanning`. The command below upgrades whichever database `DATABASE_URL` names. Do not run it until that target is intentionally selected. For the isolated PostgreSQL test workflow, use the guarded test runner instead:
+For this workstation, PostgreSQL runs in WSL. Start the FastAPI process in that same WSL terminal; do **not** run `uvicorn` from Windows PowerShell. `127.0.0.1` in `.env` must resolve inside the same environment as the PostgreSQL server.
+
+The main `firn_db` is already migrated through `0003_monitoring_replanning`. Do not run a migration as part of ordinary startup.
 
 ```bash
-alembic -c backend/alembic.ini upgrade head
+cd /mnt/c/FIRN/firn-polar-ops
+source .venv-wsl/bin/activate
 uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+In a second terminal, confirm the service before opening the frontend:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+It must return `{"status":"ok","database":"ok"}`. If it returns 503 or hangs, stop the server and confirm the WSL PostgreSQL service with `sudo service postgresql status`; do not create a second database or rerun migrations.
 
 The API exposes `/api/health`, `/api/station`, simulation-run endpoints, plan management, and monitoring/replanning endpoints documented in `docs/plan-management.md` and `docs/monitoring-and-replanning.md`. Interactive API docs are at `/docs` while the server is running.
 
@@ -66,4 +77,4 @@ API tests use an isolated in-memory SQLite database. PostgreSQL migration/connec
 
 ## Current status
 
-The local `firn_db` was verified and upgraded to revision `0002_plan_management` for Phase 5. Phase 6 revision `0003_monitoring_replanning` is tested via the guarded `firn_test_db` workflow; the main `firn_db` migration is deliberately left for an explicitly selected/manual step. A local ignored `.env` configures the API connection. The frontend monitoring workflow remains later work in Phase 7. Automated API tests use isolated in-memory SQLite, with PostgreSQL round-trip tests on `firn_test_db`.
+The local `firn_db` is migrated through `0003_monitoring_replanning`. A local ignored `.env` configures the API connection. The Phase 7 frontend workflow uses persisted runs, plans, and monitoring sessions. Automated API tests use isolated in-memory SQLite, with PostgreSQL round-trip tests on `firn_test_db`.

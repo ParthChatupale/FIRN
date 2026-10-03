@@ -1,7 +1,8 @@
 # Forecasting data and baseline decision
 
-**Status:** Phase 3 foundation; no external weather feed is connected.  
-**Updated:** 2026-10-02
+**Status:** Phase 3 foundation and Checkpoint 3 API/UI exposure; no external weather feed is connected.
+
+**Updated:** 2026-10-03
 
 ## Data-source decision
 
@@ -164,4 +165,21 @@ Although this is a stronger software check than a single seed, all targets still
 2. Add a data adapter with explicit variable/unit mapping, UTC normalization, source provenance, and missing-data accounting.
 3. Repeat held-out evaluation using an approved external hindcast plus observed station-demand data if available.
 4. Add uncertainty only after point baselines and errors are established; evaluate interval calibration rather than labeling arbitrary scenario bands P10/P50/P90.
-5. Surface reproducible trajectory comparisons through the API/UI after deciding which outputs and provenance operators should see.
+5. Implemented for saved model cases: API/UI trajectory comparisons and prefix-only point baselines. External-data comparisons remain pending.
+
+## Saved-case API and operator views — Checkpoint 3
+
+`GET /api/simulation-runs/{id}/outlook?origin_hour=0&horizon_hours=24` exposes two deliberately different products:
+
+- Point forecasts for demand and renewable output use only contiguous observations through the requested origin. With fewer than 24 observations they use persistence; otherwise they use daily seasonal-naive. The response declares method, training count and origin. Future stored telemetry is not training data. The API permits 1–72 lead hours and bounds the origin to the saved run.
+- Nominal, low-renewable and storm alternatives replay the full saved horizon from the same opening station state, seed and mission configuration. These use the explicit forcing profiles above, retaining the saved case's events and resupply. They are not resource-state-conditioned forecasts from the current monitoring cursor. Unlike the historical four-way evaluation helper, this endpoint does **not** remove resupply.
+
+The response includes configuration identity, assumptions, trajectories, summaries and mission outcomes. Look ahead exposes the alternatives, aligned power/battery/fuel plots, an hourly numerical table and the separate point forecast. These are not prediction intervals, calibrated probabilities or learned-model performance claims.
+
+Mission Planner offers saved-case, nominal, adverse and robust policies. Robust planning passes the three actual trajectories into the existing MILP's hourly conservative envelope: lower renewables, colder temperature, lower visibility and higher wind. It is a common schedule, not multistage recourse. The returned planning context and uncertainty assessment identify this policy. The illustrative simulator replay remains separate from optimizer dispatch; it does not prove execution under every scenario.
+
+Initial proposals and timing edits restore the linked case's full saved configuration, with a stable fingerprint. Optional request UUIDs make retries return the original proposal/version; reuse with different inputs is rejected. These fields live in existing snapshots and require no database migration. New optimizer dispatch records include modeled baseline demand, scheduled mission demand and curtailment so supply-versus-demand plots can be checked against the actual energy-balance equation. Older records without these fields remain unavailable rather than being reconstructed with guessed demand.
+
+See [Checkpoints 2–3 verification](verification/checkpoint-2-3/review.md) for tests, browser evidence and remaining monitoring/continuation boundaries. No historical evaluation tables above were replaced with API demonstration outcomes.
+
+Checkpoint 4 update (2026-10-03): when an observed monitoring session is selected, the numeric baseline uses that session's continued observation prefix, identified by `monitoring_session_id`. It cannot train on a future cursor. Full-horizon nominal/adverse/storm alternatives still use the original saved opening state and must not be described as current-state resource forecasts. See [Checkpoint 4 verification](verification/checkpoint-4/review.md) for the execution-policy boundary; historical tables above are unchanged.

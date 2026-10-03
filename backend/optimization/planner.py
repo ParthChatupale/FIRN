@@ -416,6 +416,7 @@ def optimize_schedule(
         model.constraints.add(delivery >= headroom - big_m * full_shipment)
         model.constraints.add(headroom >= shipment - big_m * (1 - full_shipment))
         model.constraints.add(headroom <= shipment + big_m * full_shipment)
+    modeled_baseline_demand: dict[int, float] = {}
     for hour in range(hours):
         demand = (
             station.loads.critical_kw
@@ -424,6 +425,7 @@ def optimize_schedule(
             + max(0.0, station.loads.heating_reference_temp_c - rows[hour]["temperature_c"])
             * station.loads.heating_kw_per_degree
         )
+        modeled_baseline_demand[hour] = demand
         mission_power = sum(
             mission_by_id[mid].power_kw * model.x[pair]
             for (mid, active_hour), pairs in active_lookup.items()
@@ -619,8 +621,16 @@ def optimize_schedule(
         generator_fuel += startup_fuel
         modeled_start_fuel += startup_fuel
         modeled_generator_fuel += generator_fuel
+        scheduled_power = sum(
+            mission.power_kw for mission in scheduled_missions
+            if mission.start_hour <= hour < mission.start_hour + mission.duration_hours
+        )
         dispatch.append({
             "hour": hour,
+            "baseline_demand_kw": round(modeled_baseline_demand[hour], 4),
+            "mission_demand_kw": round(scheduled_power, 4),
+            "demand_kw": round(modeled_baseline_demand[hour] + scheduled_power, 4),
+            "curtailed_kw": round(pyo.value(model.curtailed_kw[hour]), 4),
             "weather_regime": rows[hour].get("weather_regime"),
             "temperature_c": rows[hour].get("temperature_c"),
             "wind_kmh": rows[hour].get("wind_kmh"),

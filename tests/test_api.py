@@ -15,17 +15,23 @@ def test_station_route_marks_reference_profile_synthetic(api_client: TestClient)
     assert response.json()["configuration"]["battery"]["capacity_kwh"] == 360
 
 
-def test_vite_dev_origin_can_preflight_simulation_post(api_client: TestClient) -> None:
+@pytest.mark.parametrize(
+    "origin",
+    ["http://localhost:3000", "http://[::1]:3000", "http://[::1]:3001"],
+)
+def test_vite_dev_origin_can_preflight_simulation_post(
+    api_client: TestClient, origin: str
+) -> None:
     response = api_client.options(
         "/api/simulation-runs",
         headers={
-            "Origin": "http://localhost:3000",
+            "Origin": origin,
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "content-type",
         },
     )
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert response.headers["access-control-allow-origin"] == origin
 
 
 def test_health_is_degraded_when_database_url_is_missing(

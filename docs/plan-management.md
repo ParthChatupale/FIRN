@@ -58,4 +58,4 @@ Then run the backend tests:
 pytest -q
 ```
 
-The automated API lifecycle tests use an isolated in-memory SQLite schema; they do not mutate the local PostgreSQL database. A live PostgreSQL migration/API verification remains a manual local step. The UI is intentionally not connected yet; that belongs to Phase 7.
+Fast API lifecycle tests use an isolated in-memory SQLite schema. Application persistence uses PostgreSQL; separate integration tests and browser rehearsal use the existing `firn_test_db` with rollback isolation. The original frontend is connected to the lifecycle and monitoring APIs, including explicit checkpoint continuation. See [Checkpoint 4 verification](verification/checkpoint-4/review.md) for coverage, review steps and the execution-policy boundary. No migration or production-data reset is performed as part of the frontend review.

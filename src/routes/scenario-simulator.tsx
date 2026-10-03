@@ -1,32 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import {
-  ArrowDownRight,
-  ArrowRight,
-  BatteryCharging,
-  CircleAlert,
-  CloudSnow,
-  Fuel,
-  LoaderCircle,
-  Play,
-  ShieldCheck,
-  Wind,
-  Zap,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, LoaderCircle, Play, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  PageHeader,
-  ReasonButton,
-  ScenarioChip,
-  SectionTitle,
-  StatusBadge,
-} from "@/components/firn/shell";
+import { PageHeader, ScenarioChip, SectionTitle, StatusBadge } from "@/components/firn/shell";
+import { RunTimeline } from "@/components/firn/run-timeline";
 import { useFirn } from "@/lib/firn-context";
 import type { ScenarioId } from "@/lib/firn-data";
+import { formatRecordTime } from "@/lib/workspace-model";
 import {
   createSimulationRun,
-  getApiHealth,
+  listSimulationRuns,
   getSimulationRun,
   getSimulationTelemetry,
   type ApiScenario,
@@ -41,103 +25,239 @@ export const Route = createFileRoute("/scenario-simulator")({
       {
         name: "description",
         content:
-          "Test simulated storms, asset failures, fuel delays and battery constraints in FIRN.",
+          "Run a repeatable synthetic station scenario and inspect its persisted resource trajectory.",
       },
-      { property: "og:title", content: "Scenario Simulator — FIRN" },
-      {
-        property: "og:description",
-        content: "See how FIRN adapts polar missions and energy allocation together.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Simulator,
 });
+
+const apiScenarios: Record<ScenarioId, ApiScenario> = {
+  normal: "normal",
+  storm: "storm",
+  generator: "generator_failure",
+  fuel: "resupply_delay",
+  battery: "battery_capacity_loss",
+};
+
 function Simulator() {
-  const { scenario, scenarioId } = useFirn();
-  const [days, setDays] = useState(30);
+  const {
+    scenarioId,
+    runId,
+    planId,
+    monitoringId,
+    workflowLoaded,
+    setRunId,
+    setPlanId,
+    setMonitoringId,
+    setPlanGenerated,
+    preferences,
+  } = useFirn();
+  const [days, setDays] = useState(14);
   const [seed, setSeed] = useState(42);
   const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState<string | null>(null);
-  const [savedRun, setSavedRun] = useState<SimulationRun | null>(null);
-  const [telemetry, setTelemetry] = useState<TelemetryPoint[]>([]);
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedRun, setRun] = useState<SimulationRun | null>(null);
+  const [points, setPoints] = useState<TelemetryPoint[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [savedRuns, setSavedRuns] = useState<SimulationRun[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [listRevision, setListRevision] = useState(0);
+  const action = useRef(0);
+  const run = loadedRun?.id === runId ? loadedRun : null;
   useEffect(() => {
-    getApiHealth()
-      .then(() => setApiOnline(true))
-      .catch(() => setApiOnline(false));
-  }, []);
-  const changed = scenarioId !== "normal";
-  const response =
-    scenarioId === "storm"
-      ? [
-          ["Experiment A", "MOVED EARLIER"],
-          ["Experiment B", "DEFERRED"],
-          ["Sample Processing", "RUN"],
-          ["Water Production", "PROTECTED"],
-          ["Battery", "RESERVE PROTECTED"],
-          ["Generator", "READY"],
-          ["Fuel", "CONSERVE"],
-        ]
-      : scenario.actions.map((a, i) => [
-          ["Action 01", "Action 02", "Action 03", "Action 04", "Action 05"][i],
-          a,
-        ]);
-  const apiScenarios: Record<ScenarioId, ApiScenario> = {
-    normal: "normal",
-    storm: "storm",
-    generator: "generator_failure",
-    fuel: "resupply_delay",
-    battery: "battery_capacity_loss",
-  };
-  async function runSimulation() {
+    // Invalidate pending actions when another route changes the workflow or we unmount.
+    action.current += 1;
+    setRunning(false);
+    return () => {
+      action.current += 1;
+    };
+  }, [runId, planId, monitoringId]);
+  useEffect(() => {
+    let cancelled = false;
+    setListLoading(true);
+    setListError(null);
+    listSimulationRuns(100)
+      .then((page) => {
+        if (!cancelled) setSavedRuns(page.items);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setListError(reason instanceof Error ? reason.message : "Could not list saved runs.");
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listRevision]);
+  useEffect(() => {
+    setRun(null);
+    setPoints([]);
+    setLoadError(null);
+    setLoading(false);
+    if (!runId) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([getSimulationRun(runId), getSimulationTelemetry(runId)])
+      .then(([saved, page]) => {
+        if (!cancelled) {
+          setRun(saved);
+          setPoints(page.items);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setLoadError(
+            reason instanceof Error ? reason.message : "Could not restore the selected run.",
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, retry]);
+
+  async function runSimulation(savedId?: string) {
+    const request = ++action.current;
     setRunning(true);
-    setRunError(null);
-    setSavedRun(null);
-    setTelemetry([]);
+    setError(null);
+    let createdId: string | null = null;
     try {
-      const created = await createSimulationRun({ scenario: apiScenarios[scenarioId], days, seed });
-      const [retrieved, page] = await Promise.all([
-        getSimulationRun(created.id),
-        getSimulationTelemetry(created.id, 24),
-      ]);
-      setSavedRun(retrieved);
-      setTelemetry(page.items);
-    } catch (error) {
-      setRunError(error instanceof Error ? error.message : "Simulation failed. Please retry.");
+      const saved = savedId
+        ? await getSimulationRun(savedId)
+        : await createSimulationRun({ scenario: apiScenarios[scenarioId], days, seed });
+      if (!savedId) createdId = saved.id;
+      const telemetry = await getSimulationTelemetry(saved.id);
+      if (request !== action.current) return;
+      // Commit selection only after the replacement is available. Failures preserve the workflow.
+      if (saved.id !== runId) {
+        setPlanId(null);
+        setMonitoringId(null);
+        setPlanGenerated(false);
+      }
+      setRun(saved);
+      setPoints(telemetry.items);
+      setLoadError(null);
+      setRunId(saved.id);
+      setListRevision((value) => value + 1);
+    } catch (reason) {
+      if (request !== action.current) return;
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : "Could not load the simulation. Check the API connection and inputs.";
+      setError(
+        `${message} Your previous selection is unchanged.${createdId ? ` Run ${createdId} was saved, but its telemetry could not be loaded. Resume it from saved runs.` : ""}`,
+      );
+      setListRevision((value) => value + 1);
     } finally {
-      setRunning(false);
+      if (request === action.current) setRunning(false);
     }
   }
+
+  function resetSelection() {
+    action.current += 1;
+    setRunning(false);
+    setRunId(null);
+    setPlanId(null);
+    setMonitoringId(null);
+    setPlanGenerated(false);
+    setRun(null);
+    setPoints([]);
+    setError(null);
+    setLoadError(null);
+    setLoading(false);
+  }
+
   return (
     <>
       <PageHeader
-        eyebrow="Operational intelligence / What-if analysis"
+        eyebrow="Operating cases / Scenario preparation"
         title="Scenario Simulator"
-        description="Execute a station scenario, save its results, and inspect the resulting resource trajectory."
+        description="Choose a modeled condition, run it with a visible seed, and inspect the complete persisted trajectory."
         action={
-          <span className="flex items-center gap-2 text-[11px] uppercase tracking-[.1em] text-muted-foreground">
-            <span
-              className={`size-2 rounded-full ${apiOnline ? "bg-success" : apiOnline === false ? "bg-destructive" : "bg-warning"}`}
-            />
-            {apiOnline
-              ? "API · DATABASE ONLINE"
-              : apiOnline === false
-                ? "API OFFLINE"
-                : "CHECKING API"}
-          </span>
+          (runId || planId || monitoringId) && (
+            <Button
+              variant="outline"
+              disabled={running || !workflowLoaded}
+              onClick={resetSelection}
+            >
+              Clear workflow selection
+            </Button>
+          )
         }
       />
+      <div className="panel mb-5 p-5">
+        <SectionTitle
+          aside={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={listLoading || running}
+              onClick={() => setListRevision((value) => value + 1)}
+            >
+              Refresh saved runs
+            </Button>
+          }
+        >
+          Resume a saved run
+        </SectionTitle>
+        <p className="mb-3 text-xs text-muted-foreground">
+          The latest 100 saved runs are available here. Selecting a different run clears the
+          selected plan and monitoring session only after the run loads. Clearing a selection does
+          not delete backend records.
+        </p>
+        {listLoading ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading saved runs…
+          </p>
+        ) : listError ? (
+          <p role="alert" className="text-sm text-destructive">
+            {listError} Use Refresh saved runs to retry.
+          </p>
+        ) : savedRuns.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No saved runs. Create a scenario below.</p>
+        ) : (
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {savedRuns.map((saved) => (
+              <div
+                key={saved.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded border border-border p-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold">
+                    {saved.scenario.replaceAll("_", " ")} · {saved.duration_days} days · seed{" "}
+                    {saved.seed}
+                  </div>
+                  <p className="break-all text-[10px] text-muted-foreground">
+                    Saved {formatRecordTime(saved.created_at, preferences.timezone)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!workflowLoaded || running || loading || saved.id === runId}
+                  onClick={() => runSimulation(saved.id)}
+                >
+                  {saved.id === runId ? "Selected" : "Resume run"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="panel mb-5 p-5 md:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <div className="micro-label text-primary">01 / Select a condition</div>
-            <h2 className="mt-1 font-display text-base font-bold">Station scenario</h2>
-          </div>
-          <div className="hidden text-[11px] text-muted-foreground md:block">
-            Select the scenario to execute below
-          </div>
+        <div className="mb-4">
+          <div className="micro-label text-primary">01 / Define the case</div>
+          <h2 className="mt-1 font-display text-base font-bold">Operating condition</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Choose the conditions to evaluate.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(["normal", "storm", "generator", "fuel", "battery"] as ScenarioId[]).map((id) => (
@@ -148,43 +268,48 @@ function Simulator() {
       <div className="panel mb-5 p-5 md:p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <div className="micro-label text-primary">02 / Execute with the simulation engine</div>
-            <h2 className="mt-1 font-display text-base font-bold">Run and save scenario</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The API executes this scenario and stores its results and hourly telemetry in
-              PostgreSQL.
+            <div className="micro-label text-primary">02 / Prepare the horizon</div>
+            <h2 className="mt-1 font-display text-base font-bold">
+              Create a reproducible simulation run
+            </h2>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">
+              2–30 days. The seed makes the case reproducible.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label className="w-28 text-xs text-muted-foreground">
-              Duration (days)
+              Days
               <Input
                 aria-label="Duration in days"
                 type="number"
                 min={2}
-                max={365}
+                max={30}
+                disabled={running}
                 value={days}
-                onChange={(event) => setDays(Number(event.target.value))}
+                onChange={(e) => setDays(Number(e.target.value))}
                 className="mt-1"
               />
             </label>
-            <label className="w-28 text-xs text-muted-foreground">
+            <label className="w-32 text-xs text-muted-foreground">
               Random seed
               <Input
                 aria-label="Random seed"
                 type="number"
                 value={seed}
-                onChange={(event) => setSeed(Number(event.target.value))}
+                disabled={running}
+                onChange={(e) => setSeed(Number(e.target.value))}
                 className="mt-1"
               />
             </label>
             <Button
-              onClick={runSimulation}
+              onClick={() => runSimulation()}
               disabled={
+                !workflowLoaded ||
+                loading ||
                 running ||
                 !Number.isInteger(days) ||
                 days < 2 ||
-                days > 365 ||
+                days > 30 ||
                 !Number.isSafeInteger(seed)
               }
               className="min-w-40"
@@ -192,330 +317,145 @@ function Simulator() {
               {running ? (
                 <>
                   <LoaderCircle className="animate-spin" />
-                  Running…
+                  Loading run…
                 </>
               ) : (
                 <>
                   <Play />
-                  Run simulation
+                  Run scenario
                 </>
               )}
             </Button>
           </div>
         </div>
-        {runError && (
+        {(!workflowLoaded || loading) && (
+          <p role="status" className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle className="animate-spin" size={16} />
+            {workflowLoaded
+              ? "Loading the selected run and telemetry…"
+              : "Restoring workflow selection…"}
+          </p>
+        )}
+        {workflowLoaded && !runId && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            No run selected. Create a scenario or resume a saved run above.
+          </p>
+        )}
+        {runId && loadError && (
+          <div
+            role="alert"
+            className="mt-4 rounded border border-destructive/35 p-3 text-sm text-destructive"
+          >
+            <p>{loadError}</p>
+            <p className="mt-1 break-all text-xs">
+              Selected run: {runId}. Retry loading or clear the workflow selection.
+            </p>
+            <Button
+              className="mt-3"
+              variant="outline"
+              disabled={loading || running}
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              Retry selected run
+            </Button>
+          </div>
+        )}
+        {error && (
           <div
             role="alert"
             className="mt-4 rounded border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive"
           >
-            {runError}
+            {error}
           </div>
         )}
-        {savedRun && (
+        {run && !loading && !loadError && (
           <div className="mt-6 border-t border-border pt-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="micro-label text-success">Saved run / Retrieved from API</div>
+                <div className="micro-label text-success">Persisted run / retrieved from API</div>
                 <h3 className="mt-1 font-display text-lg font-bold">
-                  {savedRun.scenario.replaceAll("_", " ")}
+                  {run.scenario.replaceAll("_", " ")}
                 </h3>
+                <details className="mt-1 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Case evidence</summary>
+                  <p className="mt-2 break-all">
+                    {run.id} · {run.duration_days} days · seed {run.seed} · {run.simulator_version}
+                  </p>
+                </details>
               </div>
-              <StatusBadge tone="good">POSTGRESQL · {savedRun.simulator_version}</StatusBadge>
+              <StatusBadge tone={points.length ? "good" : "warn"}>
+                {points.length.toLocaleString()} HOURLY RECORDS
+              </StatusBadge>
             </div>
-            <p className="mt-1 break-all text-[11px] text-muted-foreground">
-              Run ID: {savedRun.id} · {savedRun.duration_days} days · seed {savedRun.seed}
-            </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <RunMetric
-                label="Missions completed"
-                value={`${savedRun.summary.missions_completed}`}
-                note={`${savedRun.summary.missions_failed} failed`}
-              />
-              <RunMetric
-                label="Renewable share"
-                value={`${savedRun.summary.renewable_share_percent}%`}
-                note="of served energy"
-              />
-              <RunMetric
-                label="Battery"
-                value={`${savedRun.summary.battery_final_kwh} kWh`}
-                note={`minimum ${savedRun.summary.battery_min_kwh} kWh`}
-              />
-              <RunMetric
-                label="Fuel remaining"
-                value={`${savedRun.summary.fuel_remaining_liters} L`}
-                note="at run end"
-              />
-              <RunMetric
-                label="Critical violations"
-                value={`${savedRun.summary.critical_violation_hours} h`}
-                note={`${savedRun.summary.unserved_energy_kwh} kWh unserved`}
-              />
+              {[
+                [
+                  "Missions completed",
+                  run.summary.missions_completed,
+                  `${run.summary.missions_failed} failed`,
+                ],
+                ["Renewable share", `${run.summary.renewable_share_percent}%`, "of served energy"],
+                [
+                  "Battery at end",
+                  `${run.summary.battery_final_kwh} kWh`,
+                  `minimum ${run.summary.battery_min_kwh} kWh`,
+                ],
+                ["Fuel at end", `${run.summary.fuel_remaining_liters} L`, "end of case"],
+                [
+                  "Critical violations",
+                  `${run.summary.critical_violation_hours} h`,
+                  `${run.summary.unserved_energy_kwh} kWh unserved`,
+                ],
+              ].map(([label, value, note]) => (
+                <div
+                  key={String(label)}
+                  className="rounded border border-border bg-secondary/25 p-3"
+                >
+                  <div className="micro-label">{label}</div>
+                  <div className="mt-2 font-display text-xl font-bold">{value}</div>
+                  <div className="mt-1 text-[10px] text-muted-foreground">{note}</div>
+                </div>
+              ))}
             </div>
-            <div className="mt-5 overflow-x-auto rounded border border-border">
-              <table className="w-full min-w-[600px] text-left text-xs">
-                <thead className="bg-secondary/40 text-[10px] uppercase tracking-[.1em] text-muted-foreground">
-                  <tr>
-                    {["Hour", "Battery SOC", "Renewables", "Demand", "Fuel"].map((label) => (
-                      <th key={label} className="px-3 py-2 font-semibold">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {telemetry
-                    .filter((point) => point.hour % 6 === 0)
-                    .map((point) => (
-                      <tr key={point.hour} className="border-t border-border/60">
-                        <td className="px-3 py-2">{point.hour}</td>
-                        <td className="px-3 py-2">{point.battery_soc_percent}%</td>
-                        <td className="px-3 py-2">{point.renewable_kw} kW</td>
-                        <td className="px-3 py-2">{point.demand_kw} kW</td>
-                        <td className="px-3 py-2">{point.fuel_liters} L</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            <div className="mt-5">
+              <SectionTitle aside="hourly simulation output">Run trajectory</SectionTitle>
+              {points.length ? (
+                <RunTimeline points={points} />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This saved run has no hourly telemetry. Summary values above are from its
+                  persisted run record.
+                </p>
+              )}
             </div>
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              Hourly samples shown for the first simulated day. All{" "}
-              {savedRun.summary.duration_hours} hourly records are persisted and available from the
-              API.
-            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded border border-primary/25 bg-primary/5 p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 text-primary" size={18} />
+                <div>
+                  <div className="text-sm font-semibold">
+                    Next: generate a joint mission–energy proposal
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Review and approve the linked plan before activation.
+                  </p>
+                </div>
+              </div>
+              <Button asChild>
+                <Link to="/mission-planner">
+                  Continue to planning <ArrowRight size={14} />
+                </Link>
+              </Button>
+            </div>
           </div>
         )}
       </div>
-      <div
-        className={`mb-5 flex flex-col gap-4 rounded-md border p-5 transition-colors md:flex-row md:items-center md:justify-between md:p-6 ${changed ? "border-warning/35 bg-warning/5" : "border-success/30 bg-success/5"}`}
-      >
-        <div className="flex gap-3">
-          <div className={`mt-0.5 ${changed ? "text-warning" : "text-success"}`}>
-            {changed ? <CircleAlert size={23} /> : <ShieldCheck size={23} />}
-          </div>
-          <div>
-            <div className={`micro-label ${changed ? "text-warning" : "text-success"}`}>
-              {scenario.label} / selected scenario context
-            </div>
-            <h2 className="mt-1 font-display text-xl font-bold">{scenario.headline}</h2>
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground md:text-[13px]">
-              {scenario.message}
-            </p>
-          </div>
-        </div>
-        <StatusBadge tone={changed ? "warn" : "good"}>
-          {changed ? "SCENARIO SELECTED" : "BASELINE SELECTED"}
-        </StatusBadge>
-      </div>
-      <div className="mb-5 grid gap-5 xl:grid-cols-[.9fr_1.1fr]">
-        <div className="panel p-5 md:p-6">
-          <SectionTitle aside="Reference context">Condition changes</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              [
-                CloudSnow,
-                "TEMPERATURE",
-                scenario.temperature,
-                scenarioId === "storm" ? "−3°C vs baseline" : "Station exterior",
-              ],
-              [
-                Wind,
-                "WIND SPEED",
-                scenario.wind,
-                scenarioId === "storm" ? "+26 km/h vs baseline" : "Within operating range",
-              ],
-              [
-                Zap,
-                "RENEWABLES",
-                `${scenario.solar + scenario.windPower} kW`,
-                `${scenario.solar} solar + ${scenario.windPower} wind`,
-              ],
-              [
-                BatteryCharging,
-                "BATTERY SOC",
-                `${scenario.battery}%`,
-                scenarioId === "battery" ? "Usable capacity −30%" : "Reserve threshold 30%",
-              ],
-            ].map(([Icon, label, value, note]) => {
-              const I = Icon as typeof Zap;
-              return (
-                <div
-                  key={label as string}
-                  className="rounded border border-border bg-secondary/30 p-4"
-                >
-                  <I size={17} className="text-primary" />
-                  <div className="micro-label mt-3">{label as string}</div>
-                  <div className="mt-1 font-display text-2xl font-bold">{value as string}</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">{note as string}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded border border-border bg-secondary/30 p-3">
-              <div className="micro-label">Visibility / Weather Risk</div>
-              <div className="mt-1 text-sm font-semibold">
-                {scenario.visibility} <span className="text-warning">· {scenario.risk}</span>
-              </div>
-            </div>
-            <div className="rounded border border-border bg-secondary/30 p-3">
-              <div className="micro-label">Fuel reserve</div>
-              <div className="mt-1 flex items-center gap-2 text-sm font-semibold">
-                <Fuel size={14} className="text-primary" />
-                {scenario.fuel}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="panel border-primary/30 bg-primary/5 p-5 md:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="micro-label text-primary">Scenario context / reference response</div>
-              <h2 className="mt-1 font-display text-lg font-bold">Operating response</h2>
-            </div>
-            <span className="text-[11px] text-muted-foreground">Mission + Energy + Assets</span>
-          </div>
-          <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            {changed
-              ? "These interface reference actions are illustrative. The persisted simulator executes configured missions and dispatch policy; it does not yet optimize or replan a schedule."
-              : "Reference operating actions are shown here. Run the scenario above to inspect calculated and persisted simulation results."}
-          </p>
-          <div className="mt-5 grid gap-2 sm:grid-cols-2">
-            {changed
-              ? response.map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex min-h-12 items-center justify-between gap-2 rounded border border-border bg-background/40 px-3 py-2"
-                  >
-                    <span className="text-xs text-muted-foreground">{label}</span>
-                    <span className="text-right text-[10px] font-bold uppercase text-primary">
-                      {value}
-                    </span>
-                  </div>
-                ))
-              : [
-                  ["Experiment A", "CONTINUE"],
-                  ["Experiment B", "SCHEDULED"],
-                  ["Water Production", "PROTECTED"],
-                  ["Battery", "RESERVE HEALTHY"],
-                  ["Generator", "STANDBY"],
-                  ["Fuel", "CONSERVE"],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex min-h-12 items-center justify-between gap-2 rounded border border-border bg-background/40 px-3 py-2"
-                  >
-                    <span className="text-xs text-muted-foreground">{label}</span>
-                    <span className="text-[10px] font-bold text-success">{value}</span>
-                  </div>
-                ))}
-          </div>
-          <div className="mt-5">
-            <ReasonButton />
-          </div>
-        </div>
-      </div>
-      <div className="panel p-5 md:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="micro-label text-primary">Planning concept / reference only</div>
-            <h2 className="mt-1 font-display text-lg font-bold">Illustrative plan comparison</h2>
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {changed ? scenario.label : "Select a disruption to compare outcomes"}
-          </span>
-        </div>
-        <div className="mt-5 grid items-stretch gap-3 md:grid-cols-[1fr_42px_1fr]">
-          <Comparison
-            title="BEFORE STORM"
-            accent={false}
-            rows={[
-              "Experiment A → 10:00",
-              "Experiment B → 14:00",
-              "Battery → 74%",
-              "Generator → Standby",
-            ]}
-          />
-          <div className="flex items-center justify-center text-primary">
-            <ArrowRight className="hidden md:block" size={23} />
-            <ArrowDownRight className="md:hidden" size={23} />
-          </div>
-          <Comparison
-            title={changed ? "AFTER FIRN REPLAN" : "CURRENT OPERATING PLAN"}
-            accent
-            rows={
-              changed
-                ? scenarioId === "storm"
-                  ? [
-                      "Experiment A → 09:00",
-                      "Experiment B → Deferred 6 hrs",
-                      "Battery → Reserve protected",
-                      "Generator → Ready for critical loads",
-                    ]
-                  : scenario.actions.slice(0, 4)
-                : [
-                    "Experiment A → 10:00",
-                    "Experiment B → 14:00",
-                    "Battery → 74%",
-                    "Generator → Standby",
-                  ]
-            }
-          />
-        </div>
-        <div className="mt-5 rounded border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-center gap-2 text-xs font-bold">
-            <ShieldCheck size={16} className="text-primary" /> Scenario rationale
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            {scenarioId === "storm"
-              ? "The selected storm input reduces renewable output during the event window. Review the saved run metrics and telemetry above for the engine-calculated effects."
-              : changed
-                ? `${scenario.message} The computed simulation outcome is shown in the saved run panel above.`
-                : "No disruption is active. Run the baseline scenario to view its calculated resource trajectory."}
-          </p>
-          <p className="mt-2 text-[10px] text-muted-foreground">
-            This comparison is not generated by the persisted simulation run. The run panel above
-            displays outputs calculated by the current engine.
-          </p>
-        </div>
-      </div>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="micro-label">SENSE → PREDICT → OPTIMIZE → ADAPT → EXPLAIN</div>
-        <Button asChild variant="outline" className="bg-secondary/40">
-          <Link to="/decision-log">
-            View Decision Log <ArrowRight size={14} />
-          </Link>
-        </Button>
-      </div>
+      <details className="text-[10px] leading-5 text-muted-foreground">
+        <summary className="cursor-pointer">Case methodology</summary>
+        <p className="mt-2">
+          All values shown are generated from the synthetic station model. No real Antarctic station
+          data or equipment is connected.
+        </p>
+      </details>
     </>
-  );
-}
-function Comparison({ title, accent, rows }: { title: string; accent: boolean; rows: string[] }) {
-  return (
-    <div
-      className={`rounded border p-4 md:p-5 ${accent ? "border-primary/35 bg-primary/5" : "border-border bg-secondary/25"}`}
-    >
-      <div className={`micro-label ${accent ? "text-primary" : ""}`}>{title}</div>
-      <div className="mt-4 space-y-3">
-        {rows.map((row, i) => (
-          <div
-            key={i}
-            className="flex min-h-8 items-center border-b border-border/60 pb-2 text-xs last:border-0 last:pb-0"
-          >
-            {row}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RunMetric({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <div className="rounded border border-border bg-secondary/25 p-3">
-      <div className="micro-label">{label}</div>
-      <div className="mt-2 font-display text-xl font-bold">{value}</div>
-      <div className="mt-1 text-[10px] text-muted-foreground">{note}</div>
-    </div>
   );
 }

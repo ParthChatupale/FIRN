@@ -1,7 +1,7 @@
 # Monitoring and adaptive replanning
 
-**Status:** Phase 6 simulation-only backend workflow. It replays stored synthetic telemetry; it does not connect to physical equipment or live station feeds.  
-**Updated:** 2026-10-02
+**Status:** Backend and original frontend connected, including operator-approved checkpoint continuation. No physical equipment or live station feeds are connected.
+**Updated:** 2026-10-03
 
 ## Operating flow
 
@@ -10,9 +10,22 @@
 3. Start a monitoring session for the active plan and matching run. Its persisted clock starts at hour `-1`.
 4. Advance the clock by 1–24 simulated hours. Each step reads one saved telemetry row, compares it with the active plan's dispatch/weather trajectory, evaluates alerts, and appends any resulting event.
 5. A qualifying alert can create a linked `proposed` child plan from the latest observed battery, fuel, generator, and remaining-mission state. The parent plan stays `active`; a pending proposal prevents duplicate automatic proposals until an operator decides it.
-6. Review, edit, approve, and activate through the existing Phase 5 plan workflow. Activation is still explicit and supersedes the former plan only after approval.
+6. Review, approve, and explicitly activate through Monitoring or Mission Planner. Checkpoint timing edits remain unavailable (API conflict), rather than losing continuation metadata.
+7. Activation carries the checkpoint into the same monitoring session; the next advance starts at the following absolute hour. A batch stops early when an actionable proposal requires a decision. Rejecting it permits advancement without replacing the active plan.
 
 The clock advances through a completed, persisted simulator trajectory; the simulator itself is not being stepped against newly arriving observations. The monitoring API reports the latest simulated state and an actual-versus-plan comparison for weather, renewable availability, battery SOC, fuel, generator status, and mission progress.
+
+## Checkpoint continuation policy
+
+`generator_first_approved_missions_v1` applies the replacement's selected mission timings with the existing generator-first simulator dispatch. It does not apply the optimizer's dispatch. The branch is precomputed at explicit activation, not animated independent readings or live assimilation.
+
+The original run remains immutable. The session stores the retained prefix, remaining trajectory, events, execution config and policy in its existing JSONB state. No new schema or migration is required. Each further revision keeps the same run/session and absolute timeline. Saved station equipment, reserve, fuel, generator operating state, remaining events/resupply and the parent's declared planning-weather policy are carried. Completed work requires an observed completion event; an elapsed planned window is not completion. The recent fuel-rate window includes pre-revision observations rather than resetting at the branch boundary.
+
+Activation rejects stale/mismatched checkpoints and invalid carried state. It validates energy balance, battery reserve/capacity and fuel bounds before committing the replacement and its continuation atomically. These modeled checks are not physical safety certification. Trigger thresholds and two-clear-hour hysteresis remain distinct from append-only history.
+
+The session response includes `trajectory`, `observed_events`, `active_alerts`, `plan_origin_hour` and `execution_policy`. Only observations through `current_hour` are presented as observed. References use the active plan's absolute origin; a new plan cannot explain earlier hours retroactively. Remaining-horizon candidate/carry-forward comparisons are stored together; general version comparison rejects different origins/horizons.
+
+An advance can include `expected_hour` with `hours`; a stale cursor returns 409 instead of advancing twice. Look-ahead may supply `monitoring_session_id` to use the continued observation prefix for its numeric baseline; an unobserved origin is rejected. Its full-horizon alternatives remain matched-opening-state alternatives, not current-state forecasts.
 
 ## Trigger and guard policy
 
@@ -59,4 +72,4 @@ Automated end-to-end tests cover storms, generator failure, sustained low-renewa
 - A checkpoint replan uses the observed state and a new deterministic synthetic future trajectory. The future is not derived from actual future observations or a calibrated forecast distribution.
 - Generator and mission state reconstruction follows available simulator telemetry/events; this remains a simplified model.
 - Operator identity is still a caller-provided label, with no authentication/authorization layer.
-- The frontend is not connected to these monitoring endpoints yet; that is Phase 7.
+- The original frontend is connected; see [Checkpoint 4 review and screenshots](verification/checkpoint-4/review.md). The separate `frontend/` draft is unchanged.

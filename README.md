@@ -19,7 +19,7 @@ When FIRN is opened, the operator can move through a connected station workflow 
   <img src="docs/diagrams/image.png" alt="FIRN operating model: station inputs flow through the decision layer into operator-approved execution and significant-change replanning" width="100%" />
 </p>
 
-*Figure 1. FIRN connects station inputs, decision support, operator approval, execution monitoring, and adaptive replanning.*
+_Figure 1. FIRN connects station inputs, decision support, operator approval, execution monitoring, and adaptive replanning._
 
 The operator remains in control. FIRN recommends, explains, and adapts; it does not silently activate a plan or control physical station equipment.
 
@@ -109,9 +109,11 @@ The application is intentionally focused on making the operating workflow clear 
 
 ### Start the workspace
 
-Configure Python dependencies and local PostgreSQL credentials by following [docs/backend-setup.md](docs/backend-setup.md). Start the backend in one terminal from the repository root:
+Configure Python dependencies and local PostgreSQL credentials by following [docs/backend-setup.md](docs/backend-setup.md). Because PostgreSQL is installed in WSL on this workstation, start the backend in a WSL terminal—not Windows PowerShell:
 
 ```sh
+cd /mnt/c/FIRN/firn-polar-ops
+source .venv-wsl/bin/activate
 uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 

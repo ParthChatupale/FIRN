@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
+from dataclasses import asdict
 from uuid import UUID, uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.models import PlanEvent, PlanVersion, SimulationRun
 from backend.simulation import SimulationConfig
 from backend.simulation.scenarios import build_scenario
+from backend.app.case_config import restore_config, fingerprint
+from backend.simulation.forecast_scenarios import build_trajectory
 
 PLANNER_MODEL_VERSION = "firn-joint-mission-energy-milp-v1"
 
@@ -26,6 +30,25 @@ def _solver_version(solver_name: str) -> str:
 
 class PlanRuleError(ValueError):
     """A plan lifecycle or edit request violates the domain rules."""
+
+
+class PlanningFailure(PlanRuleError):
+    def __init__(self, snapshot: dict[str, Any]):
+        super().__init__(f"Optimizer did not produce a plan: {snapshot.get('reason', snapshot['status'])}")
+        self.result = {"code": snapshot["status"], "message": str(self),
+                       "diagnostics": snapshot.get("diagnostics", {}),
+                       "uncertainty_assessment": snapshot.get("uncertainty_assessment", {})}
+
+
+def planning_weather(config: SimulationConfig, mode: str) -> dict[str, Any]:
+    if mode == "saved":
+        return {}
+    if mode in {"nominal", "adverse"}:
+        return {"weather_forcing": build_trajectory("nominal" if mode == "nominal" else "low_renewable", config.hours).weather}
+    if mode == "robust":
+        return {"weather_scenarios": {name: build_trajectory(name, config.hours).weather
+                                     for name in ("nominal", "low_renewable", "storm")}}
+    raise ValueError("Unknown planning mode")
 
 
 def _build_config(
@@ -131,13 +154,17 @@ def create_proposal(
     db: Session,
     *, scenario: str, days: int, seed: int, flexibility_hours: int,
     start_time: str, source_run: SimulationRun | None = None,
+    planning_mode: str = "saved", request_id: str | None = None,
 ) -> PlanVersion:
     from backend.optimization import optimize_schedule
 
-    config = _build_config(scenario=scenario, days=days, seed=seed, start_time=start_time)
-    snapshot = optimize_schedule(config, flexibility_hours=flexibility_hours)
+    config = restore_config(source_run.config_snapshot) if source_run else _build_config(scenario=scenario, days=days, seed=seed, start_time=start_time)
+    snapshot = optimize_schedule(config, flexibility_hours=flexibility_hours, **planning_weather(config, planning_mode))
     if snapshot["status"] not in {"optimal", "feasible"}:
-        raise PlanRuleError(f"Optimizer did not produce a plan: {snapshot.get('reason', snapshot['status'])}")
+        raise PlanningFailure(snapshot)
+    snapshot["planning_context"] = {"mode": planning_mode, "request_id": request_id,
+        "config_fingerprint": fingerprint(config), "config_snapshot": asdict(config),
+        "flexibility_hours": flexibility_hours}
     group_id = uuid4()
     plan = PlanVersion(
         plan_group_id=group_id,
@@ -163,12 +190,48 @@ def create_proposal(
     return plan
 
 
+def _require_editable_lineage(db: Session, plan: PlanVersion) -> None:
+    """Legacy edits can lose checkpoint metadata, so inspect every ancestor."""
+    visited: set[UUID] = set()
+    current = plan
+    while True:
+        if "monitoring_replan" in current.plan_snapshot:
+            # The existing edit route maps PlanRuleError to 422. This unsupported
+            # operation is a conflict, before any configuration rebuild or writes.
+            raise HTTPException(
+                status_code=409,
+                detail="Timing edits are unsupported for checkpoint plans and their descendants; "
+                "checkpoint configuration cannot be safely reconstructed for editing.",
+            )
+        if current.id in visited:
+            raise HTTPException(status_code=409, detail="Cannot verify plan edit lineage: cycle detected")
+        visited.add(current.id)
+        if current.parent_version_id is None:
+            return
+        ancestor = db.get(PlanVersion, current.parent_version_id)
+        if ancestor is None:
+            raise HTTPException(status_code=409, detail="Cannot verify plan edit lineage: ancestor missing")
+        current = ancestor
+
+
 def create_edited_version(
-    db: Session, parent: PlanVersion, mission_start_hours: dict[str, int], *, actor: str = "operator"
+    db: Session, parent: PlanVersion, mission_start_hours: dict[str, int], *, actor: str = "operator", request_id: str | None = None
 ) -> PlanVersion:
     from backend.optimization import optimize_schedule
 
-    config = _build_config(
+    if request_id:
+        existing = db.scalar(select(PlanVersion).where(
+            PlanVersion.plan_snapshot["planning_context"]["edit_request_id"].as_string() == request_id))
+        if existing:
+            previous = existing.plan_snapshot["planning_context"]
+            if existing.parent_version_id != parent.id or previous.get("edit_starts") != mission_start_hours or previous.get("edit_actor") != actor:
+                raise HTTPException(status_code=409, detail="This request ID already belongs to a different timing edit")
+            return existing
+    _require_editable_lineage(db, parent)
+    context = parent.plan_snapshot.get("planning_context", {})
+    source = db.get(SimulationRun, parent.source_simulation_run_id) if parent.source_simulation_run_id else None
+    saved_config = context.get("config_snapshot") or (source.config_snapshot if source else None)
+    config = restore_config(saved_config) if saved_config else _build_config(
         scenario=parent.scenario,
         days=parent.days,
         seed=parent.seed,
@@ -192,15 +255,22 @@ def create_edited_version(
         mission_id: ([candidate_starts[mission_id]] if mission_id in candidate_starts else [])
         for mission_id in mission_ids
     }
-    snapshot = optimize_schedule(config, start_options=start_options, flexibility_hours=0)
+    snapshot = optimize_schedule(config, start_options=start_options, flexibility_hours=0,
+                                 **planning_weather(config, context.get("mode", "saved")))
     if snapshot["status"] not in {"optimal", "feasible"}:
-        raise PlanRuleError(f"Edited schedule is infeasible: {snapshot.get('reason', snapshot['status'])}")
+        raise PlanningFailure(snapshot)
     actual = {
         item["mission_id"]: item["start_hour"]
         for item in snapshot.get("schedule", []) if item.get("selected")
     }
     if actual != candidate_starts:
-        raise PlanRuleError("The edited mission schedule is not feasible with all selected missions")
+        raise PlanningFailure({"status": "infeasible", "reason": "The requested timing edit cannot retain every selected mission",
+            "diagnostics": {"missions_not_retained": sorted(set(candidate_starts) - set(actual)),
+                            "requested_starts": candidate_starts,
+                            "note": "A feasible optional-mission solve dropped work fixed by the operator. This edit is rejected, not saved; inspect mission weather, time and shared-resource restrictions."},
+            "uncertainty_assessment": snapshot.get("uncertainty_assessment", {})})
+    snapshot["planning_context"] = {**context, "config_snapshot": asdict(config), "config_fingerprint": fingerprint(config), "request_id": None,
+                                   "edit_request_id": request_id, "edit_starts": mission_start_hours, "edit_actor": actor}
 
     latest = db.scalar(
         select(PlanVersion.version_number)
@@ -212,6 +282,10 @@ def create_edited_version(
     before_schedule = {
         item["mission_id"]: item for item in parent.plan_snapshot.get("schedule", [])
     }
+    for item in snapshot.get("schedule", []):
+        previous = before_schedule.get(item["mission_id"], {})
+        if not previous.get("selected") and not item.get("selected"):
+            item["reason"] = "Retained parent selection: " + previous.get("reason", "Not selected in the parent version.")
     after_schedule = {item["mission_id"]: item for item in snapshot.get("schedule", [])}
     explanations["mission_decisions"] = [
         {
@@ -295,6 +369,8 @@ def apply_plan_action(
     if next_status is None:
         raise PlanRuleError(f"Cannot {action} a plan in {current} state")
     if action == "activate":
+        from backend.app.monitoring import activate_checkpoint_execution
+        activate_checkpoint_execution(db, plan, actor=actor)
         active_plans = db.scalars(
             select(PlanVersion)
             .where(PlanVersion.station_name == plan.station_name, PlanVersion.status == "active")
@@ -329,6 +405,8 @@ def compare_versions(db: Session, group_id: UUID, baseline: int, candidate: int)
     if baseline not in by_number or candidate not in by_number:
         raise PlanRuleError("Both plan versions must exist in the requested plan group")
     before, after = by_number[baseline], by_number[candidate]
+    if before.simulation_start_time != after.simulation_start_time or before.days != after.days:
+        raise PlanRuleError("Different time origins/horizons cannot be compared as savings; use the checkpoint's matched remaining-horizon baseline")
     before_schedule = {item["mission_id"]: item for item in before.plan_snapshot.get("schedule", [])}
     after_schedule = {item["mission_id"]: item for item in after.plan_snapshot.get("schedule", [])}
     changes = []

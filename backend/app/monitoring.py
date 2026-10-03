@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 import math
 from typing import Any
@@ -19,15 +19,36 @@ from backend.app.models import (
     SimulationRun,
     SimulationTelemetry,
 )
-from backend.app.plans import PLANNER_MODEL_VERSION, PlanRuleError, _explanations, _solver_version
+from backend.app.plans import PLANNER_MODEL_VERSION, PlanRuleError, _explanations, _solver_version, planning_weather
+from backend.app.case_config import restore_config, fingerprint
 from backend.simulation import EventKind, MissionConfig, SimulationConfig
-from backend.simulation.scenarios import build_scenario
+from backend.simulation import SimulationEngine
 
 
 SOFT_HYSTERESIS_HOURS = 2
 STARTUP_FREEZE_HOURS = 1
 REPLAN_COOLDOWN_HOURS = 6
 MINIMUM_FUEL_BENEFIT = 0.05
+EXECUTION_POLICY = "generator_first_approved_missions_v1"
+
+
+def _plan_origin(plan: PlanVersion) -> int:
+    return int(plan.plan_snapshot.get("monitoring_replan", {}).get("absolute_origin_hour", 0))
+
+
+def _session_data(db: Session, session: MonitoringSession, run: SimulationRun):
+    rows = db.scalars(select(SimulationTelemetry).where(
+        SimulationTelemetry.run_id == run.id).order_by(SimulationTelemetry.hour)).all()
+    telemetry = [row.payload for row in rows]
+    execution = (session.alert_state or {}).get("__execution", {})
+    if execution:
+        telemetry = execution["history"] + execution["trajectory"]
+        # A transient view retains the root time convention without changing saved run records.
+        view = SimulationRun(id=run.id, scenario=run.scenario, station_name=run.station_name,
+                             duration_days=run.duration_days, seed=run.seed, started_at=run.started_at,
+                             config_snapshot=run.config_snapshot, event_log=execution["event_log"])
+        return view, telemetry
+    return run, telemetry
 
 
 def _event_hour(run: SimulationRun, event: dict[str, Any]) -> int | None:
@@ -88,7 +109,11 @@ def _hour_observation(
 ) -> dict[str, Any]:
     actual = telemetry[hour]
     dispatch_rows = plan.plan_snapshot.get("dispatch", [])
-    planned = dispatch_rows[hour] if hour < len(dispatch_rows) else {}
+    local_hour = hour - _plan_origin(plan)
+    planned = dispatch_rows[local_hour] if 0 <= local_hour < len(dispatch_rows) else {}
+    def deviation(actual_key: str, plan_key: str):
+        observed, expected = actual.get(actual_key), planned.get(plan_key)
+        return round(float(observed) - float(expected), 4) if observed is not None and expected is not None else None
     run_events = [
         item for item in run.event_log if _event_hour(run, item) == hour
     ]
@@ -98,12 +123,15 @@ def _hour_observation(
         if str(item.get("kind", "")).startswith("mission_")
     ]
     mission_progress = []
-    for scheduled in plan.plan_snapshot.get("schedule", []):
+    schedule = {item["mission_id"]: item for item in plan.plan_snapshot.get("schedule", [])}
+    for mission in run.config_snapshot.get("station", {}).get("missions", []):
+        schedule.setdefault(mission["id"], {"mission_id": mission["id"], "selected": False})
+    for scheduled in schedule.values():
         mission_id = str(scheduled.get("mission_id"))
         if not scheduled.get("selected"):
             planned_state = "not_in_active_schedule"
         else:
-            start = int(scheduled["start_hour"])
+            start = int(scheduled["start_hour"]) + _plan_origin(plan)
             end = start + int(scheduled["duration_hours"])
             planned_state = (
                 "upcoming" if hour < start
@@ -117,6 +145,8 @@ def _hour_observation(
             and (_event_hour(run, item) is not None and _event_hour(run, item) <= hour)
         ]
         latest_event = prior_mission_events[-1] if prior_mission_events else None
+        if latest_event and latest_event.get("kind") == "mission_completed" and not scheduled.get("selected"):
+            planned_state = "completed_before_checkpoint"
         mission_progress.append({
             "mission_id": mission_id,
             "planned_state": planned_state,
@@ -146,22 +176,14 @@ def _hour_observation(
         "generator_status": actual.get("generator_status", {}),
         "mission_events": mission_events,
         "mission_progress": mission_progress,
+        "execution_policy": (session.alert_state or {}).get("__execution", {}).get("policy", "original_case_replay"),
         "forecast_comparison": {
             "planned_renewable_available_kw": planned.get("renewable_available_kw"),
-            "renewable_delta_kw": round(
-                float(actual.get("renewable_kw", 0))
-                - float(planned.get("renewable_available_kw", 0)), 4
-            ),
+            "renewable_delta_kw": deviation("renewable_kw", "renewable_available_kw"),
             "planned_battery_kwh": planned.get("battery_soc_kwh"),
-            "battery_delta_kwh": round(
-                float(actual.get("battery_kwh", 0))
-                - float(planned.get("battery_soc_kwh", 0)), 4
-            ),
+            "battery_delta_kwh": deviation("battery_kwh", "battery_soc_kwh"),
             "planned_fuel_liters": planned.get("fuel_liters"),
-            "fuel_delta_liters": round(
-                float(actual.get("fuel_liters", 0))
-                - float(planned.get("fuel_liters", 0)), 4
-            ),
+            "fuel_delta_liters": deviation("fuel_liters", "fuel_liters"),
         },
         "simulation_events": [
             {"kind": item.get("kind"), "subject": item.get("subject"), "message": item.get("message")}
@@ -194,11 +216,17 @@ def _signals(
             signals.append({
                 "rule": rule, "severity": severity, "source": matching, "event_based": True
             })
+    rules = {signal["rule"] for signal in signals}
+    failed_generators = [key for key, status in actual.get("generator_status", {}).items() if status == "failed"]
+    if failed_generators and "generator_failure" not in rules:
+        signals.append({"rule": "generator_failure", "severity": "critical", "source": failed_generators})
+    if actual.get("weather_regime") == "storm" and "storm" not in rules:
+        signals.append({"rule": "storm", "severity": "high", "source": [{"wind_kmh": actual.get("wind_kmh"), "visibility_km": actual.get("visibility_km")} ]})
     if actual.get("critical_violation"):
         signals.append({"rule": "critical_load_violation", "severity": "critical", "source": []})
 
     previous = telemetry[max(0, hour - 1):hour + 1]
-    base = build_scenario(run.scenario, days=run.duration_days, seed=run.seed).station
+    base = restore_config(run.config_snapshot).station
     installed_renewable = base.solar_capacity_kw + base.wind_capacity_kw
     renewable_floor = max(8.0, installed_renewable * 0.18)
     def renewable_stress(row: dict[str, Any]) -> bool:
@@ -217,7 +245,8 @@ def _signals(
         plan_dispatch = plan.plan_snapshot.get("dispatch", [])
         deviations = []
         for index, row in zip(range(hour - 1, hour + 1), previous, strict=True):
-            expected = plan_dispatch[index] if index < len(plan_dispatch) else {}
+            local = index - _plan_origin(plan)
+            expected = plan_dispatch[local] if 0 <= local < len(plan_dispatch) else {}
             deviations.append(
                 float(row.get("battery_kwh", 0))
                 < float(expected.get("battery_soc_kwh", 0)) - 60.0
@@ -239,11 +268,14 @@ def _update_hysteresis(
     by_rule = {item["rule"]: item for item in signals}
     state = {key: dict(value) for key, value in (session.alert_state or {}).items()}
     matured: list[dict[str, Any]] = []
-    known_rules = set(state) | set(by_rule)
+    known_rules = {key for key in state if not key.startswith("__")} | set(by_rule)
     for rule in known_rules:
         current = by_rule.get(rule)
         item = state.get(rule, {"active": False, "count": 0, "clear": 0})
         if current:
+            item["severity"] = current["severity"]
+            item["last_seen_hour"] = hour
+            item["source"] = current.get("source", [])
             item["count"] = int(item.get("count", 0)) + 1
             item["clear"] = 0
             threshold = (
@@ -257,6 +289,7 @@ def _update_hysteresis(
             )
             if not item.get("active") and item["count"] >= threshold:
                 item["active"] = True
+                item["first_seen_hour"] = hour
                 matured.append(current)
         else:
             item["count"] = 0
@@ -282,11 +315,13 @@ def _checkpoint_config(
     if remaining_hours <= 0:
         raise PlanRuleError("The simulated run has no remaining hours to replan")
     remaining_days = math.ceil(remaining_hours / 24)
-    original = build_scenario(parent.scenario, days=run.duration_days, seed=run.seed)
+    context = parent.plan_snapshot.get("planning_context", {})
+    original = restore_config(context.get("config_snapshot") or run.config_snapshot)
+    origin = _plan_origin(parent)
     current = telemetry[hour]
     planned = {
         item["mission_id"]: item
-        for item in parent.plan_snapshot.get("schedule", []) if item.get("selected")
+        for item in parent.plan_snapshot.get("schedule", [])
     }
     original_missions = {mission.id: mission for mission in original.station.missions}
 
@@ -300,30 +335,32 @@ def _checkpoint_config(
                 )
     missions: list[MissionConfig] = []
     baseline_starts: dict[str, list[int]] = {}
-    for mission_id, schedule in planned.items():
-        mission = original_missions.get(mission_id)
-        if mission is None:
-            continue
-        planned_start = int(schedule["start_hour"])
-        planned_end = planned_start + int(schedule["duration_hours"])
+    for mission_id, mission in original_missions.items():
+        schedule = planned.get(mission_id, {})
+        was_selected = bool(schedule.get("selected"))
+        planned_start = int(schedule["start_hour"] if was_selected else mission.start_hour) + origin
         outcomes = mission_events.get(mission_id, [])
-        completed = any(kind == "mission_completed" for _event_hour_value, kind in outcomes)
-        failed = any(
-            kind in {"mission_failed", "mission_deferred", "mission_weather_interruption", "mission_power_shortfall"}
-            for _event_hour_value, kind in outcomes
-        )
-        if completed and not failed:
+        latest_kind = outcomes[-1][1] if outcomes else None
+        completed = latest_kind == "mission_completed"
+        failed = latest_kind in {"mission_failed", "mission_deferred", "mission_weather_interruption", "mission_power_shortfall"}
+        if completed:
             continue
-        if planned_end <= next_hour and not failed:
-            continue
-        if failed:
+        started_hours = [event_hour for event_hour, kind in outcomes if kind == "mission_started"]
+        in_progress = latest_kind == "mission_started" and bool(started_hours)
+        if failed or (planned_start < next_hour and not in_progress):
             remaining_duration = mission.duration_hours
             shifted_start = 0
-            mission_fuel = mission.non_electric_fuel_l
+            mission_fuel = 0.0 if started_hours else mission.non_electric_fuel_l
+        elif in_progress:
+            remaining_duration = mission.duration_hours - (next_hour - started_hours[-1])
+            if remaining_duration <= 0:
+                raise PlanRuleError(f"Mission {mission_id} has elapsed execution without a completion event")
+            shifted_start = 0
+            mission_fuel = 0.0
         else:
-            remaining_duration = max(1, planned_end - next_hour)
+            remaining_duration = mission.duration_hours
             shifted_start = max(0, planned_start - next_hour)
-            mission_fuel = 0.0 if planned_start < next_hour else mission.non_electric_fuel_l
+            mission_fuel = mission.non_electric_fuel_l
         if shifted_start + remaining_duration > remaining_hours:
             continue
         missions.append(replace(
@@ -332,24 +369,28 @@ def _checkpoint_config(
             duration_hours=remaining_duration,
             non_electric_fuel_l=mission_fuel,
         ))
-        baseline_starts[mission_id] = [shifted_start]
+        baseline_starts[mission_id] = [shifted_start] if was_selected else []
 
     battery = original.station.battery
     current_soc = max(0.0, min(battery.capacity_kwh, float(current["battery_kwh"])))
     battery = replace(
         battery,
         initial_kwh=current_soc,
-        reserve_kwh=min(battery.reserve_kwh, current_soc),
     )
     generators: list[GeneratorConfig] = []
     for generator in original.station.generators:
         output = float(current.get("generator_output_kw", {}).get(generator.id, 0.0))
         is_on = output > 1e-6
+        state_hours = 0
+        for past in reversed(telemetry[:hour + 1]):
+            if (float(past.get("generator_output_kw", {}).get(generator.id, 0.0)) > 1e-6) != is_on:
+                break
+            state_hours += 1
         generators.append(replace(
             generator,
             initial_on=is_on,
             initial_power_kw=output if is_on else 0.0,
-            initial_state_hours=1,
+            initial_state_hours=state_hours,
         ))
 
     resupply = original.station.fuel_resupply
@@ -361,13 +402,18 @@ def _checkpoint_config(
 
     events: list[ScheduledEvent] = []
     for event in original.events:
-        if event.kind is EventKind.RESUPPLY_DELAY:
-            continue  # The checkpoint telemetry already contains its effective arrival hour.
-        event_end = event.hour + event.duration_hours
+        absolute_start = event.hour + origin
+        if event.kind is EventKind.RESUPPLY_DELAY and resupply is None:
+            continue  # A future delay after an already received delivery is a no-op.
+        if event.kind is EventKind.RESUPPLY_DELAY and absolute_start <= hour:
+            continue  # Applied delays are already present in the carried arrival hour.
+        event_end = absolute_start + event.duration_hours
         if event_end <= next_hour:
             continue
-        shifted_start = max(0, event.hour - next_hour)
-        shifted_duration = event_end - max(event.hour, next_hour)
+        shifted_start = max(0, absolute_start - next_hour)
+        if shifted_start >= remaining_hours:
+            continue
+        shifted_duration = event_end - max(absolute_start, next_hour)
         events.append(replace(event, hour=shifted_start, duration_hours=shifted_duration))
 
     station = replace(
@@ -386,6 +432,7 @@ def _checkpoint_config(
         start_time=timestamp.isoformat(),
         station=station,
         events=tuple(events),
+        horizon_hours=remaining_hours,
     )
     config.validate()
     return config, baseline_starts
@@ -403,8 +450,10 @@ def _create_checkpoint_proposal(
     from backend.optimization import optimize_schedule
 
     config, baseline_starts = _checkpoint_config(plan, run, telemetry, hour)
-    candidate = optimize_schedule(config, flexibility_hours=min(plan.flexibility_hours, 12))
-    baseline = optimize_schedule(config, start_options=baseline_starts, flexibility_hours=0)
+    mode = plan.plan_snapshot.get("planning_context", {}).get("mode", "saved")
+    weather = planning_weather(config, mode)
+    candidate = optimize_schedule(config, flexibility_hours=min(plan.flexibility_hours, 12), **weather)
+    baseline = optimize_schedule(config, start_options=baseline_starts, flexibility_hours=0, **weather)
     if candidate["status"] not in {"optimal", "feasible"}:
         return None, {"reason": candidate.get("reason", candidate["status"]), "minimum_benefit_met": False}
     candidate_score = float(candidate.get("objective", {}).get("priority_weighted_missions", 0))
@@ -446,6 +495,8 @@ def _create_checkpoint_proposal(
         "session_id": str(session.id),
         "source_simulation_run_id": str(run.id),
         "checkpoint_hour": hour,
+        "absolute_origin_hour": hour + 1,
+        "remaining_hours": config.hours,
         "trigger": trigger["rule"],
         "starting_state": {
             "battery_kwh": telemetry[hour].get("battery_kwh"),
@@ -454,7 +505,12 @@ def _create_checkpoint_proposal(
         },
         "forecast_policy": "new deterministic synthetic trajectory from the observed checkpoint; not future observed weather",
         "benefit_assessment": benefit,
+        "baseline_status": baseline["status"],
+        "baseline_schedule": baseline.get("schedule", []),
+        "baseline_dispatch": baseline.get("dispatch", []),
     }
+    candidate["planning_context"] = {"mode": mode, "config_snapshot": asdict(config),
+                                     "config_fingerprint": fingerprint(config)}
     explanations = _explanations(config, candidate)
     explanations["monitoring_replan"] = candidate["monitoring_replan"]
     replan = PlanVersion(
@@ -506,12 +562,12 @@ def advance_monitoring_session(
         raise PlanRuleError("Monitoring session references missing plan or simulation data")
     if plan.status != "active":
         raise PlanRuleError("The monitored plan is no longer active; start a session for the approved replacement")
-    rows = db.scalars(
-        select(SimulationTelemetry)
-        .where(SimulationTelemetry.run_id == run.id)
-        .order_by(SimulationTelemetry.hour)
-    ).all()
-    telemetry = [item.payload for item in rows]
+    pending = db.get(PlanVersion, session.pending_proposal_id) if session.pending_proposal_id else None
+    if pending and pending.status in {"proposed", "reviewed", "approved"}:
+        raise PlanRuleError("Playback is paused at the decision checkpoint; review and activate or reject the pending proposal")
+    if session.pending_proposal_id:
+        session.pending_proposal_id = None
+    run, telemetry = _session_data(db, session, run)
     for _ in range(hours):
         next_hour = session.current_hour + 1
         if next_hour >= len(telemetry):
@@ -564,10 +620,89 @@ def advance_monitoring_session(
                 observation=details,
                 proposal_plan_version_id=proposal_id,
             ))
+        if session.pending_proposal_id:
+            pending = db.get(PlanVersion, session.pending_proposal_id)
+            if pending and pending.status in {"proposed", "reviewed", "approved"}:
+                break  # Stop exactly at the state used by the proposal, not hours beyond it.
     if session.current_hour >= len(telemetry) - 1:
         session.status = "completed"
     db.flush()
     return session
+
+
+def activate_checkpoint_execution(db: Session, plan: PlanVersion, *, actor: str) -> None:
+    """Atomic, explicit replacement activation: retain history and carry end-of-hour state.
+
+    Execution uses the existing simulator's generator-first dispatch with the approved
+    remaining mission schedule. It is NOT execution of the optimizer's MILP dispatch.
+    """
+    checkpoint = plan.plan_snapshot.get("monitoring_replan")
+    if not checkpoint:
+        return
+    if not all(key in checkpoint for key in ("session_id", "checkpoint_hour", "absolute_origin_hour")):
+        raise PlanRuleError("This older replacement lacks continuation metadata; create a fresh checkpoint")
+    session = db.scalar(select(MonitoringSession).where(
+        MonitoringSession.id == UUID(checkpoint["session_id"])).with_for_update())
+    if session is None or session.status != "monitoring":
+        raise PlanRuleError("Replacement requires its still-open monitoring session")
+    if (session.pending_proposal_id != plan.id or session.plan_version_id != plan.parent_version_id
+            or session.current_hour != checkpoint["checkpoint_hour"]):
+        raise PlanRuleError("Replacement checkpoint is stale or belongs to a different decision; reload monitoring")
+    run = db.get(SimulationRun, session.simulation_run_id)
+    if not run or plan.source_simulation_run_id != run.id:
+        raise PlanRuleError("Replacement source case does not match monitoring")
+    view, previous = _session_data(db, session, run)
+    origin = session.current_hour + 1
+    saved = plan.plan_snapshot.get("planning_context", {}).get("config_snapshot")
+    if not saved:
+        raise PlanRuleError("This older replacement lacks execution inputs; reject it and create a fresh checkpoint")
+    config = restore_config(saved)
+    if config.hours != len(previous) - origin:
+        raise PlanRuleError("Replacement horizon does not match remaining operating time")
+    current = previous[session.current_hour]
+    if (abs(config.station.battery.initial_kwh - current["battery_kwh"]) > 1e-4
+            or abs(config.station.initial_fuel_liters - current["fuel_liters"]) > 1e-4):
+        raise PlanRuleError("Replacement opening resources do not match the observed checkpoint")
+    by_id = {mission.id: mission for mission in config.station.missions}
+    missions = tuple(replace(by_id[row["mission_id"]], start_hour=int(row["start_hour"]))
+                     for row in plan.plan_snapshot.get("schedule", []) if row.get("selected"))
+    execution_config = replace(config, station=replace(config.station, missions=missions))
+    result = SimulationEngine().run(execution_config)
+    for row in result.telemetry:
+        if (abs(row["energy_balance_error_kw"]) > 1e-5
+                or not config.station.battery.reserve_kwh - 1e-3 <= row["battery_kwh"] <= config.station.battery.capacity_kwh + 1e-3
+                or not 0 <= row["fuel_liters"] <= config.station.fuel_capacity_liters + 1e-3):
+            raise PlanRuleError("Continuation failed energy/resource invariants; activation was not recorded")
+    trajectory = [{**row, "hour": row["hour"] + origin,
+                   "resupply_arrival_hour": (row["resupply_arrival_hour"] + origin
+                                              if row["resupply_arrival_hour"] is not None else None)}
+                  for row in result.telemetry]
+    history = previous[:origin]
+    combined = history + trajectory
+    for index, row in enumerate(trajectory, start=origin):
+        window = combined[max(0, index - 23):index + 1]
+        rate = sum(item["fuel_consumed_liters"] + item["mission_fuel_used_liters"]
+                   for item in window) / len(window)
+        row["fuel_runway_hours"] = round(row["fuel_liters"] / rate, 2) if rate > 1e-9 else None
+    old_events = [event for event in view.event_log
+                  if (event_hour := _event_hour(view, event)) is not None
+                  and event_hour <= session.current_hour]
+    state = dict(session.alert_state or {})
+    state["__execution"] = {"policy": EXECUTION_POLICY, "origin_hour": origin,
+                            "history": history, "trajectory": trajectory,
+                            "event_log": old_events + result.event_log,
+                            "initial_state": {"battery_kwh": config.station.battery.initial_kwh,
+                                              "fuel_liters": config.station.initial_fuel_liters},
+                            "config_snapshot": asdict(execution_config)}
+    session.alert_state = state
+    session.plan_version_id = plan.id
+    session.pending_proposal_id = None
+    db.add(MonitoringEvent(session_id=session.id, hour=session.current_hour,
+                           rule="operator_activation", severity="info", action="execution_resumed",
+                           observation={"actor": actor, "parent_plan_version_id": str(plan.parent_version_id),
+                                        "replacement_plan_version_id": str(plan.id), "origin_hour": origin,
+                                        "policy": EXECUTION_POLICY, "initial_state": state["__execution"]["initial_state"]},
+                           proposal_plan_version_id=plan.id))
 
 
 def serialize_monitoring_session(db: Session, session: MonitoringSession) -> dict[str, Any]:
@@ -577,20 +712,12 @@ def serialize_monitoring_session(db: Session, session: MonitoringSession) -> dic
         .order_by(MonitoringEvent.hour, MonitoringEvent.created_at)
     ).all()
     latest = None
+    run = db.get(SimulationRun, session.simulation_run_id)
+    plan = db.get(PlanVersion, session.plan_version_id)
+    view, telemetry = _session_data(db, session, run) if run else (None, [])
     if session.current_hour >= 0:
-        row = db.get(SimulationTelemetry, (session.simulation_run_id, session.current_hour))
-        if row is not None:
-            run = db.get(SimulationRun, session.simulation_run_id)
-            plan = db.get(PlanVersion, session.plan_version_id)
-            if run and plan:
-                all_rows = db.scalars(
-                    select(SimulationTelemetry)
-                    .where(SimulationTelemetry.run_id == run.id)
-                    .order_by(SimulationTelemetry.hour)
-                ).all()
-                latest = _hour_observation(
-                    session, run, plan, [item.payload for item in all_rows], session.current_hour
-                )
+        if view and plan and session.current_hour < len(telemetry):
+            latest = _hour_observation(session, view, plan, telemetry, session.current_hour)
     return {
         "id": session.id,
         "station_name": session.station_name,
@@ -601,6 +728,14 @@ def serialize_monitoring_session(db: Session, session: MonitoringSession) -> dic
         "last_proposal_hour": session.last_proposal_hour,
         "pending_proposal_id": session.pending_proposal_id,
         "latest_observation": latest,
+        "plan_origin_hour": _plan_origin(plan) if plan else 0,
+        "execution_policy": (session.alert_state or {}).get("__execution", {}).get("policy", "original_case_replay"),
+        "trajectory": telemetry,
+        "active_alerts": [{"rule": key, **value} for key, value in (session.alert_state or {}).items()
+                          if not key.startswith("__") and value.get("active")],
+        "observed_events": [event for event in (view.event_log if view else [])
+                            if (event_hour := _event_hour(view, event)) is not None
+                            and event_hour <= session.current_hour],
         "events": [
             {
                 "id": item.id,

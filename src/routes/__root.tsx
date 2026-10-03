@@ -10,8 +10,12 @@ import {
 import type { ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import presentationCss from "../presentation.css?url";
 import { FirnProvider } from "../lib/firn-context";
 import { Shell } from "../components/firn/shell";
+import { PresentationProvider, usePresentation } from "../lib/presentation-context";
+import { PresentationShell, PRESENTATION_ROUTES } from "../components/firn/presentation-shell";
+import { useRouterState } from "@tanstack/react-router";
 
 function NotFoundComponent() {
   return (
@@ -76,9 +80,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "FIRN — Polar Operational Intelligence" },
-      { name: "description", content: "A simulation prototype for mission-aware polar station planning." },
+      {
+        name: "description",
+        content: "A simulation prototype for mission-aware polar station planning.",
+      },
       { property: "og:title", content: "FIRN — Polar Operational Intelligence" },
-      { property: "og:description", content: "Explore simulated mission, energy and asset-aware planning." },
+      {
+        property: "og:description",
+        content: "Explore simulated mission, energy and asset-aware planning.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -87,7 +97,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" },
+      { rel: "stylesheet", href: presentationCss },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap",
+      },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
     ],
   }),
@@ -116,7 +130,22 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <FirnProvider><Shell><Outlet /></Shell></FirnProvider>
+      <PresentationProvider>
+        <WorkspaceFrame />
+      </PresentationProvider>
     </QueryClientProvider>
+  );
+}
+
+function WorkspaceFrame() {
+  const { enabled } = usePresentation();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  if (enabled && PRESENTATION_ROUTES.includes(path)) return <PresentationShell />;
+  return (
+    <FirnProvider>
+      <Shell>
+        <Outlet />
+      </Shell>
+    </FirnProvider>
   );
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -22,9 +23,11 @@ from backend.app.monitoring import (
     advance_monitoring_session,
     serialize_monitoring_session,
     start_monitoring_session,
+    _session_data,
 )
 from backend.app.plans import (
     PlanRuleError,
+    PlanningFailure,
     apply_plan_action,
     compare_versions,
     create_edited_version,
@@ -46,9 +49,11 @@ from backend.app.schemas import (
     SimulationRunList,
     SimulationRunRead,
     TelemetryPage,
+    OutlookRead,
 )
 from backend.simulation import SimulationEngine, SimulationConfig
 from backend.simulation.scenarios import build_scenario
+from backend.app.outlook import case_outlook
 
 try:
     SIMULATOR_VERSION = version("firn-polar-ops")
@@ -56,14 +61,21 @@ except PackageNotFoundError:
     SIMULATOR_VERSION = "0.1.0"
 
 app = FastAPI(title="FIRN API", version="0.1.0")
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,"
+        "http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=cors_origins,
+    # Vite may bind a different local port or IPv6 loopback when a default port is busy.
+    # Keep this narrowly scoped to loopback addresses rather than opening CORS generally.
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\]):\d+$",
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
@@ -75,6 +87,17 @@ def handle_database_not_configured(_request: Any, _exc: DatabaseNotConfigured) -
     return JSONResponse(
         status_code=503,
         content={"detail": "DATABASE_URL is not configured"},
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+def handle_database_error(_request: Any, _exc: SQLAlchemyError) -> JSONResponse:
+    """Return a usable API error when the local database cannot be reached."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Database connection unavailable. Run the FIRN API from WSL when PostgreSQL is running in WSL."
+        },
     )
 
 
@@ -217,6 +240,33 @@ def get_run_missions(run_id: UUID, db: Session = Depends(get_db)) -> list[dict[s
     return run.mission_results
 
 
+@app.get("/api/simulation-runs/{run_id}/outlook", response_model=OutlookRead)
+def get_outlook(run_id: UUID, origin_hour: int = Query(default=0, ge=0),
+                horizon_hours: int = Query(default=24, ge=1, le=72),
+                monitoring_session_id: UUID | None = None, db: Session = Depends(get_db)):
+    run = db.get(SimulationRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Simulation run not found")
+    rows = db.scalars(select(SimulationTelemetry).where(SimulationTelemetry.run_id == run_id)
+                      .order_by(SimulationTelemetry.hour)).all()
+    telemetry = [r.payload for r in rows]
+    if monitoring_session_id is not None:
+        session = db.get(MonitoringSession, monitoring_session_id)
+        if session is None or session.simulation_run_id != run_id:
+            raise HTTPException(status_code=404, detail="Matching monitoring session not found")
+        if origin_hour > session.current_hour:
+            raise HTTPException(status_code=409, detail="Forecast origin has not been observed")
+        _, telemetry = _session_data(db, session, run)
+    try:
+        result = case_outlook(run, telemetry, origin_hour, horizon_hours)
+        result["forecast"]["observation_source"] = (
+            "monitoring_session" if monitoring_session_id is not None else "saved_run"
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 def _get_plan(db: Session, plan_id: UUID) -> PlanVersion:
     plan = db.scalar(
         select(PlanVersion)
@@ -230,6 +280,20 @@ def _get_plan(db: Session, plan_id: UUID) -> PlanVersion:
 
 @app.post("/api/plan-proposals", response_model=PlanVersionRead, status_code=201)
 def propose_plan(request: PlanProposalCreate, db: Session = Depends(get_db)) -> dict[str, Any]:
+    if request.request_id:
+        # PostgreSQL transaction-level lock serializes retries across workers, without new tables.
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": request.request_id.int % (2**63)})
+        existing = db.scalar(select(PlanVersion).where(
+            PlanVersion.plan_snapshot["planning_context"]["request_id"].as_string() == str(request.request_id)))
+        if existing:
+            context = existing.plan_snapshot.get("planning_context", {})
+            if (existing.source_simulation_run_id != request.source_simulation_run_id or
+                context.get("mode") != request.planning_mode or existing.flexibility_hours != request.flexibility_hours or
+                any(value is not None and value != getattr(existing, field) for field, value in
+                    (("scenario", request.scenario), ("days", request.days), ("seed", request.seed)))):
+                raise HTTPException(status_code=409, detail="This request ID already belongs to different planning inputs")
+            return serialize_plan(_get_plan(db, existing.id))
     source_run = db.get(SimulationRun, request.source_simulation_run_id) if request.source_simulation_run_id else None
     if request.source_simulation_run_id and source_run is None:
         raise HTTPException(status_code=404, detail="Source simulation run not found")
@@ -269,9 +333,13 @@ def propose_plan(request: PlanProposalCreate, db: Session = Depends(get_db)) -> 
             flexibility_hours=request.flexibility_hours,
             start_time=start_time,
             source_run=source_run,
+            planning_mode=request.planning_mode, request_id=str(request.request_id) if request.request_id else None,
         )
         db.commit()
         return serialize_plan(_get_plan(db, plan.id))
+    except PlanningFailure as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=exc.result) from exc
     except PlanRuleError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -333,9 +401,15 @@ def edit_plan(
 ) -> dict[str, Any]:
     parent = _get_plan(db, plan_id)
     try:
-        plan = create_edited_version(db, parent, request.mission_start_hours, actor=actor)
+        if request.request_id and db.get_bind().dialect.name == "postgresql":
+            db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": request.request_id.int % (2**63)})
+        plan = create_edited_version(db, parent, request.mission_start_hours, actor=actor,
+                                    request_id=str(request.request_id) if request.request_id else None)
         db.commit()
         return serialize_plan(_get_plan(db, plan.id))
+    except PlanningFailure as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=exc.result) from exc
     except PlanRuleError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -434,6 +508,8 @@ def advance_monitoring(
     if session is None:
         raise HTTPException(status_code=404, detail="Monitoring session not found")
     try:
+        if request.expected_hour is not None and request.expected_hour != session.current_hour:
+            raise PlanRuleError("Operating clock changed; refresh before retrying advancement")
         advance_monitoring_session(db, session, hours=request.hours)
         db.commit()
         return serialize_monitoring_session(db, session)

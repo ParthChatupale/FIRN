@@ -1,9 +1,227 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { AlertTriangle, BatteryCharging, CloudSun, Gauge } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { PageHeader, SectionTitle } from '@/components/firn/shell';
-import { useFirn } from '@/lib/firn-context';
-import { forecastData } from '@/lib/firn-data';
-export const Route = createFileRoute('/forecast')({ head: () => ({ meta: [{ title: 'Forecast & Risk — FIRN' }, { name: 'description', content: 'Simulated renewable generation, demand and battery forecasts for polar station planning.' }, { property: 'og:title', content: 'Forecast & Risk — FIRN' }, { property: 'og:description', content: 'Explore FIRN’s simulated weather and energy forecast risk.' }, { property: 'og:type', content: 'website' }, { name: 'twitter:card', content: 'summary_large_image' }] }), component: Forecast });
-function Forecast() { const { scenarioId } = useFirn(); const data = forecastData.map(d => scenarioId === 'storm' && Number(d.time.slice(0,2)) >= 14 && Number(d.time.slice(0,2)) <= 20 ? {...d, renewable: Math.round(d.renewable*.55), battery: d.battery-10} : d); return <><PageHeader eyebrow="Predictive intelligence / Next 24 hours" title="Forecast & Risk" description="Weather Risk and resource availability shape when missions can run safely."/><div className="grid gap-5 xl:grid-cols-2"><ForecastChart title="Renewable Generation Forecast" metric="renewable" unit="kW" color="var(--primary)" icon={<CloudSun size={18}/>} data={data}/><ForecastChart title="Station Demand Forecast" metric="demand" unit="kW" color="var(--success)" icon={<Gauge size={18}/>} data={data}/><div className="xl:col-span-2"><ForecastChart title="Battery SOC Forecast" metric="battery" unit="%" color="var(--warning)" icon={<BatteryCharging size={18}/>} data={data}/></div></div><div className="mt-5 grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="panel p-5 md:p-6"><SectionTitle>Forecast Confidence</SectionTitle><div className="grid gap-4 sm:grid-cols-3">{[['Renewable',82],['Demand',91],['Weather',76]].map(([label,value]) => <div key={label}><div className="flex justify-between text-xs"><span>{label}</span><span className="font-bold text-primary">{value}%</span></div><div className="mt-2 h-1.5 rounded-full bg-secondary"><div className="h-1.5 rounded-full bg-primary" style={{width:`${value}%`}}/></div></div>)}</div></div><div className="panel border-warning/30 bg-warning/5 p-5 md:p-6"><div className="flex items-center gap-2 text-sm font-bold"><AlertTriangle size={17} className="text-warning"/> Upcoming Risk</div><p className="mt-3 text-xs leading-5 text-muted-foreground">Renewable generation expected to decline between 14:00–20:00 due to worsening weather conditions.</p></div></div></>; }
-function ForecastChart({title,metric,unit,color,icon,data}: {title:string;metric:'renewable'|'demand'|'battery';unit:string;color:string;icon:React.ReactNode;data:typeof forecastData}) { return <div className="panel min-w-0 p-5 md:p-6"><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 font-display text-sm font-bold"><span className="text-primary">{icon}</span>{title}</div><span className="micro-label">NEXT 24H</span></div><div className="mt-6 h-[225px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{top:5,right:5,left:-20,bottom:0}}><defs><linearGradient id={`fill-${metric}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={.3}/><stop offset="100%" stopColor={color} stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 5"/><XAxis dataKey="time" tick={{fill:'var(--muted-foreground)',fontSize:10}} axisLine={false} tickLine={false} interval={2}/><YAxis tick={{fill:'var(--muted-foreground)',fontSize:10}} axisLine={false} tickLine={false} domain={metric==='battery'?[0,100]:[0,'auto']}/><Tooltip contentStyle={{background:'var(--popover)',border:'1px solid var(--border)',borderRadius:6,color:'var(--foreground)',fontSize:12}} formatter={(value) => [`${value} ${unit}`,title]} labelFormatter={(label) => `${label} · simulated`}/><Area type="monotone" dataKey={metric} stroke={color} strokeWidth={2} fill={`url(#fill-${metric})`} activeDot={{r:5}}/></AreaChart></ResponsiveContainer></div><div className="mt-2 text-right text-[10px] text-muted-foreground">Time (UTC) →</div></div>; }
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { ArrowRight, ChartNoAxesCombined, LoaderCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageHeader, SectionTitle, StatusBadge } from "@/components/firn/shell";
+import { RunTimeline } from "@/components/firn/run-timeline";
+import {
+  getSimulationRun,
+  getSimulationTelemetry,
+  type SimulationRun,
+  type TelemetryPoint,
+} from "@/lib/firn-api";
+import { useFirn } from "@/lib/firn-context";
+import { LookAheadWorkspace } from "@/components/firn/look-ahead-workspace";
+
+export const Route = createFileRoute("/forecast")({
+  head: () => ({
+    meta: [
+      { title: "Look ahead — FIRN" },
+      {
+        name: "description",
+        content: "Inspect the simulated resource trajectory from a persisted FIRN run.",
+      },
+    ],
+  }),
+  component: LookAheadWorkspace,
+});
+
+export function Forecast() {
+  const { runId, workflowLoaded } = useFirn();
+  if (!workflowLoaded)
+    return (
+      <div role="status" className="panel p-5 text-sm text-muted-foreground">
+        Restoring workflow selection…
+      </div>
+    );
+  return <ForecastRun key={runId ?? "empty"} runId={runId} />;
+}
+
+function ForecastRun({ runId }: { runId: string | null }) {
+  const { setRunId, setPlanId, setMonitoringId, setPlanGenerated } = useFirn();
+  const [run, setRun] = useState<SimulationRun | null>(null);
+  const [points, setPoints] = useState<TelemetryPoint[]>([]);
+  const [loading, setLoading] = useState(!!runId);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    setRun(null);
+    setPoints([]);
+    setError(null);
+    if (!runId) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([getSimulationRun(runId), getSimulationTelemetry(runId)])
+      .then(([nextRun, page]) => {
+        if (!cancelled) {
+          setRun(nextRun);
+          setPoints(page.items);
+          setError(null);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : "Could not load run telemetry.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, retry]);
+
+  function resetSelection() {
+    setRunId(null);
+    setPlanId(null);
+    setMonitoringId(null);
+    setPlanGenerated(false);
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Simulation evidence / Resource outlook"
+        title="Forecast & Risk"
+        description="Inspect the selected run’s hourly synthetic resource trajectory. These curves are simulation output, not calibrated weather forecasts."
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            {run && (
+              <StatusBadge tone="neutral">
+                SEED {run.seed} · {run.duration_days} DAYS
+              </StatusBadge>
+            )}
+            {runId && (
+              <Button variant="outline" onClick={resetSelection}>
+                Clear workflow selection
+              </Button>
+            )}
+          </div>
+        }
+      />
+      {loading && (
+        <div
+          role="status"
+          className="panel flex items-center gap-3 p-5 text-sm text-muted-foreground"
+        >
+          <LoaderCircle className="animate-spin text-primary" size={18} />
+          Retrieving the full hourly series…
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="panel border-destructive/30 p-5 text-sm text-destructive">
+          {error}
+          <p className="mt-2 break-all text-xs">
+            Selected run: {runId}. Its plan and monitoring selection have been preserved.
+          </p>
+          <Button variant="outline" className="mt-3" onClick={() => setRetry((value) => value + 1)}>
+            Retry telemetry
+          </Button>
+        </div>
+      )}
+      {!runId && !loading && (
+        <div className="panel p-7">
+          <ChartNoAxesCombined className="text-primary" />
+          <SectionTitle>There is no selected simulation run yet</SectionTitle>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Create a seeded scenario or resume a saved run to inspect its resource trajectory.
+            Clearing the workflow selection does not delete saved backend records.
+          </p>
+          <Button asChild>
+            <Link to="/scenario-simulator">
+              Create or resume a run <ArrowRight size={14} />
+            </Link>
+          </Button>
+        </div>
+      )}
+      {run && !loading && !error && (
+        <>
+          <div className="panel mb-5 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="micro-label text-primary">
+                  Persisted run · {run.scenario.replaceAll("_", " ")}
+                </div>
+                <h2 className="mt-1 font-display text-lg font-bold">{run.station_name}</h2>
+                <details className="mt-2 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Case evidence</summary>
+                  <p className="mt-2 break-all">
+                    Run {run.id} · simulator {run.simulator_version} ·{" "}
+                    {points.length.toLocaleString()} hourly records loaded
+                  </p>
+                </details>
+              </div>
+              <Button asChild variant="outline">
+                <Link to="/mission-planner">
+                  Review a joint plan <ArrowRight size={14} />
+                </Link>
+              </Button>
+            </div>
+          </div>
+          <div className="panel p-5 md:p-6">
+            <SectionTitle aside="One shared simulated-hour horizon">
+              Resource trajectory
+            </SectionTitle>
+            {points.length > 0 ? (
+              <RunTimeline points={points} />
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                <p>
+                  This saved run has no hourly telemetry. The summary below comes from its persisted
+                  run record.
+                </p>
+                <Button
+                  className="mt-3"
+                  variant="outline"
+                  onClick={() => setRetry((value) => value + 1)}
+                >
+                  Reload telemetry
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric
+              label="Renewable share"
+              value={`${run.summary.renewable_share_percent}%`}
+              note="of served energy"
+            />
+            <Metric
+              label="Minimum battery"
+              value={`${run.summary.battery_min_kwh} kWh`}
+              note={`ending at ${run.summary.battery_final_kwh} kWh`}
+            />
+            <Metric
+              label="Fuel remaining"
+              value={`${run.summary.fuel_remaining_liters} L`}
+              note="at simulation end"
+            />
+            <Metric
+              label="Critical-load violations"
+              value={`${run.summary.critical_violation_hours} h`}
+              note={`${run.summary.unserved_energy_kwh} kWh unserved`}
+            />
+          </div>
+          <details className="mt-4 text-[11px] leading-5 text-muted-foreground">
+            <summary className="cursor-pointer">Outlook methodology</summary>
+            <p className="mt-2">
+              Uncertainty is not shown as a probability band: current forecasts and trajectories use
+              deterministic synthetic assumptions and are not calibrated against station
+              observations.
+            </p>
+          </details>
+        </>
+      )}
+    </>
+  );
+}
+
+function Metric({ label, value, note }: { label: string; value: string; note: string }) {
+  return (
+    <div className="panel p-4">
+      <div className="micro-label">{label}</div>
+      <div className="mt-2 font-display text-2xl font-bold">{value}</div>
+      <div className="mt-1 text-[11px] text-muted-foreground">{note}</div>
+    </div>
+  );
+}

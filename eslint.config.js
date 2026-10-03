@@ -12,6 +12,8 @@ export default tseslint.config(
       ".output",
       ".vinxi",
       ".venv/**",
+      ".venv-wsl/**",
+      ".nitro/**",
       ".pytest_cache/**",
       ".tmp-firn-tests-*/**",
       "backend/**",

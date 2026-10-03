@@ -10,15 +10,24 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as DecisionLogRouteImport } from './routes/decision-log'
 import { Route as EnergyAssetsRouteImport } from './routes/energy-assets'
 import { Route as ForecastRouteImport } from './routes/forecast'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as MissionPlannerRouteImport } from './routes/mission-planner'
+import { Route as MonitoringRouteImport } from './routes/monitoring'
 import { Route as ScenarioSimulatorRouteImport } from './routes/scenario-simulator'
+import { Route as SettingsRouteImport } from './routes/settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DecisionLogRoute = DecisionLogRouteImport.update({
@@ -36,9 +45,19 @@ const ForecastRoute = ForecastRouteImport.update({
   path: '/forecast',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MissionPlannerRoute = MissionPlannerRouteImport.update({
   id: '/mission-planner',
   path: '/mission-planner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringRoute = MonitoringRouteImport.update({
+  id: '/monitoring',
+  path: '/monitoring',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScenarioSimulatorRoute = ScenarioSimulatorRouteImport.update({
@@ -46,66 +65,99 @@ const ScenarioSimulatorRoute = ScenarioSimulatorRouteImport.update({
   path: '/scenario-simulator',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
+  '/login': typeof LoginRoute
   '/mission-planner': typeof MissionPlannerRoute
+  '/monitoring': typeof MonitoringRoute
   '/scenario-simulator': typeof ScenarioSimulatorRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
+  '/login': typeof LoginRoute
   '/mission-planner': typeof MissionPlannerRoute
+  '/monitoring': typeof MonitoringRoute
   '/scenario-simulator': typeof ScenarioSimulatorRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
+  '/login': typeof LoginRoute
   '/mission-planner': typeof MissionPlannerRoute
+  '/monitoring': typeof MonitoringRoute
   '/scenario-simulator': typeof ScenarioSimulatorRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
+    | '/login'
     | '/mission-planner'
+    | '/monitoring'
     | '/scenario-simulator'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
+    | '/login'
     | '/mission-planner'
+    | '/monitoring'
     | '/scenario-simulator'
+    | '/settings'
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
+    | '/login'
     | '/mission-planner'
+    | '/monitoring'
     | '/scenario-simulator'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   DecisionLogRoute: typeof DecisionLogRoute
   EnergyAssetsRoute: typeof EnergyAssetsRoute
   ForecastRoute: typeof ForecastRoute
+  LoginRoute: typeof LoginRoute
   MissionPlannerRoute: typeof MissionPlannerRoute
+  MonitoringRoute: typeof MonitoringRoute
   ScenarioSimulatorRoute: typeof ScenarioSimulatorRoute
+  SettingsRoute: typeof SettingsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -115,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/decision-log': {
@@ -138,11 +197,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForecastRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mission-planner': {
       id: '/mission-planner'
       path: '/mission-planner'
       fullPath: '/mission-planner'
       preLoaderRoute: typeof MissionPlannerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring': {
+      id: '/monitoring'
+      path: '/monitoring'
+      fullPath: '/monitoring'
+      preLoaderRoute: typeof MonitoringRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scenario-simulator': {
@@ -152,16 +225,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScenarioSimulatorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   DecisionLogRoute: DecisionLogRoute,
   EnergyAssetsRoute: EnergyAssetsRoute,
   ForecastRoute: ForecastRoute,
+  LoginRoute: LoginRoute,
   MissionPlannerRoute: MissionPlannerRoute,
+  MonitoringRoute: MonitoringRoute,
   ScenarioSimulatorRoute: ScenarioSimulatorRoute,
+  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

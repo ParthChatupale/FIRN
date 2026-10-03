@@ -61,10 +61,23 @@ class PlanProposalCreate(BaseModel):
     seed: int | None = Field(default=None, ge=-(2**63), le=2**63 - 1)
     flexibility_hours: int = Field(default=12, ge=0, le=72)
     source_simulation_run_id: UUID | None = None
+    planning_mode: Literal["saved", "nominal", "adverse", "robust"] = "saved"
+    request_id: UUID | None = None
+
+
+class OutlookRead(BaseModel):
+    source_run_id: UUID
+    config_fingerprint: str
+    origin_hour: int
+    horizon_hours: int
+    forecast: dict[str, Any]
+    cases: list[dict[str, Any]]
+    assumptions: dict[str, Any]
 
 
 class PlanVersionEdit(BaseModel):
     mission_start_hours: dict[str, int] = Field(min_length=1)
+    request_id: UUID | None = None
 
 
 class PlanActionRequest(BaseModel):
@@ -117,6 +130,7 @@ class MonitoringSessionCreate(BaseModel):
 
 class MonitoringAdvanceRequest(BaseModel):
     hours: int = Field(default=1, ge=1, le=24)
+    expected_hour: int | None = Field(default=None, ge=-1)
 
 
 class MonitoringEventRead(BaseModel):
@@ -140,6 +154,11 @@ class MonitoringSessionRead(BaseModel):
     last_proposal_hour: int | None
     pending_proposal_id: UUID | None
     latest_observation: dict[str, Any] | None
+    plan_origin_hour: int = 0
+    execution_policy: str = "original_case_replay"
+    trajectory: list[dict[str, Any]] = []
+    active_alerts: list[dict[str, Any]] = []
+    observed_events: list[dict[str, Any]] = []
     events: list[MonitoringEventRead]
     created_at: datetime
     updated_at: datetime

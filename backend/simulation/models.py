@@ -328,10 +328,11 @@ class SimulationConfig:
     start_time: str = "2032-01-01T00:00:00+00:00"
     station: StationConfig = field(default_factory=StationConfig)
     events: tuple[ScheduledEvent, ...] = ()
+    horizon_hours: int | None = None
 
     @property
     def hours(self) -> int:
-        return self.days * 24
+        return self.days * 24 if self.horizon_hours is None else self.horizon_hours
 
     def validate(self) -> None:
         _validate_hour("Simulation duration in days", self.days)
@@ -339,6 +340,10 @@ class SimulationConfig:
             raise ValueError("Simulation seed must be an integer")
         if self.days <= 0 or self.days > 365:
             raise ValueError("Simulation duration must be between 1 and 365 days")
+        if self.horizon_hours is not None:
+            _validate_hour("Hourly horizon", self.horizon_hours)
+            if not 1 <= self.horizon_hours <= self.days * 24:
+                raise ValueError("Hourly horizon must fit within the declared days")
         if not isinstance(self.start_time, str):
             raise ValueError("start_time must be an ISO 8601 datetime string")
         try:

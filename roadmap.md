@@ -6,7 +6,7 @@ This is the project’s single progress tracker. The existing React workspace is
 
 - Check a task only when its stated evidence or acceptance criteria are met.
 - A phase is complete only when every required task and its exit gate are complete.
-- Keep detailed domain definitions in `docs/firn-domain-spec.md` and the simulator audit in `docs/simulation-gap-report.md`; this file tracks order and progress.
+- Keep detailed domain definitions in `docs/firn-domain-spec.md`, the product proof standard in `docs/firn-demonstration-contract.md`, and the simulator audit in `docs/simulation-gap-report.md`; this file tracks order and progress.
 - Do not describe synthetic station values as calibrated data or the current system as synchronized with a real station.
 
 ## Current project state
@@ -17,9 +17,10 @@ This is the project’s single progress tracker. The existing React workspace is
 - [x] Simulator independently audited against the frozen FIRN domain specification; remaining model gaps are documented.
 - [x] FastAPI application scaffold and initial PostgreSQL persistence migration applied to local `firn_db`.
 - [x] Local app configuration and PostgreSQL API round trip verified; Scenario Simulator frontend connected to run/retrieve persisted results.
-- [x] Forecasting, optimization, and the backend plan lifecycle are implemented; monitoring remains ahead in Phase 6.
+- [x] Forecasting, optimization, monitoring, and the backend plan lifecycle are implemented.
+- [x] Phase 7 product workflow connects the frontend to persisted runs, plans, plan history, and simulated monitoring evidence.
 
-The station and operating values are currently synthetic. The Phase 2 `simulation_runs` and `simulation_telemetry` tables and Phase 5 plan workflow tables are applied in the user's WSL PostgreSQL `firn_db`; the API and Scenario Simulator vertical slice save and retrieve runs. Plan approval routes are API-only until Phase 7 frontend work. This is not the final FIRN operational database schema.
+The station and operating values are currently synthetic. The Phase 2 `simulation_runs` and `simulation_telemetry` tables, Phase 5 plan workflow tables, and Phase 6 monitoring tables are applied in the user's WSL PostgreSQL `firn_db`. The Phase 7 frontend work is tracked in `docs/phase-7-demonstration.md`. This is not the final FIRN operational database schema.
 
 ## Phase 0 — Problem, research, and scope
 
@@ -143,6 +144,7 @@ The API workflow and migration are covered by automated tests. Revision `0002_pl
 - [x] Define two-hour signal persistence/clear hysteresis, an initial freeze, a post-proposal cooldown, and a modeled-benefit threshold with explicit high-severity exceptions (`docs/monitoring-and-replanning.md`).
 - [x] Create a checkpoint-based child proposal after a significant event while retaining the current active plan until explicit approval and activation (`backend/app/monitoring.py`, `backend/app/plans.py`).
 - [x] Test storm, generator failure, sustained low renewable output, delayed resupply, and mission-response monitoring end to end (`tests/test_monitoring.py`).
+- [x] Demonstration Checkpoint 4 extension: continue the same session after explicit replacement activation with carried state, recorded remaining work, absolute time and the declared generator-first/approved-missions policy. This does not implement MILP dispatch execution; see `docs/verification/checkpoint-4/review.md`.
 
 **Exit gate:** A significant simulated change creates an explainable proposal while preserving operator control and plan history.
 
@@ -150,14 +152,16 @@ The API workflow and migration are covered by automated tests. Revision `0002_pl
 
 **Goal:** Evolve the prototype into the user interface for the working backend and decision loop.
 
-- [ ] Retain useful visual components and responsive patterns from the current workspace.
-- [ ] Replace hardcoded scenario results with API data and explicit loading/error/empty states.
-- [ ] Build station overview, mission workspace, proposed/active plan, plan comparison, monitoring, and decision history around actual domain objects.
-- [ ] Provide timeline, energy, battery, fuel, mission, and risk views aligned to the same time axis.
-- [ ] Support scenario what-if, plan review, operator edits, and explicit approval.
-- [ ] Verify the core workflow at laptop and presentation sizes.
+- [x] Retain useful visual components and responsive patterns from the current workspace.
+- [x] Replace hardcoded scenario results with API data and explicit loading/error/empty states.
+- [x] Build station overview, mission workspace, proposed/active plan, plan comparison, monitoring, and decision history around actual domain objects.
+- [x] Provide timeline, energy, battery, fuel, mission, and risk views aligned to the same time axis.
+- [x] Support scenario what-if, plan review, operator edits, and explicit approval.
+- [x] Verify the core workflow at laptop and presentation sizes.
 
 **Exit gate:** The operator can move through the complete workflow using persisted backend state rather than frontend-only scenario objects.
+
+**Phase 7 refinement:** A dedicated Monitoring route now keeps the operator's current simulated state, plan status, next action, deviations, and persisted alerts available without navigating through the planning workspace.
 
 ## Phase 8 — Evaluation and stress testing
 

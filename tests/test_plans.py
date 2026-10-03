@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from backend.app.db import get_db
+from backend.app.main import app
 from backend.app.models import Base, PlanEvent, PlanVersion
 
 
@@ -157,6 +159,71 @@ def test_source_simulation_run_is_linked_and_conflicting_inputs_rejected(api_cli
         json={"source_simulation_run_id": run["id"], "seed": 52},
     )
     assert conflict.status_code == 422
+
+
+@pytest.mark.parametrize("descendant_depth", [0, 1, 2])
+def test_checkpoint_timing_edits_and_legacy_descendants_return_409_without_changes(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch, descendant_depth: int,
+) -> None:
+    root = _proposal(api_client)
+    fields = (
+        "station_name", "scenario", "days", "seed", "flexibility_hours",
+        "simulation_start_time", "solver_name", "solver_version", "planner_model_version",
+    )
+    db_iterator = app.dependency_overrides[get_db]()
+    db = next(db_iterator)
+    try:
+        parent_id = UUID(root["id"])
+        for index in range(descendant_depth + 1):
+            snapshot = dict(root["plan_snapshot"])
+            if index == 0:
+                snapshot["monitoring_replan"] = {"checkpoint_hour": 1}
+            # Descendants model saved legacy edits that lost checkpoint metadata.
+            version = PlanVersion(
+                **{field: root[field] for field in fields},
+                plan_group_id=UUID(root["plan_group_id"]),
+                version_number=index + 2,
+                parent_version_id=parent_id,
+                status="proposed",
+                plan_snapshot=snapshot,
+                explanations={},
+            )
+            db.add(version)
+            db.flush()
+            parent_id = version.id
+        db.commit()
+        target_id = str(parent_id)
+    finally:
+        db_iterator.close()
+
+    versions_url = f"/api/plan-groups/{root['plan_group_id']}/versions"
+    before = api_client.get(versions_url).json()
+    selected = next(item for item in root["plan_snapshot"]["schedule"] if item["selected"])
+    edit = {"mission_start_hours": {selected["mission_id"]: selected["start_hour"] + 1}}
+
+    def unexpected_rebuild(**_kwargs):
+        pytest.fail("Checkpoint edits must be rejected before rebuilding scenario state")
+
+    with monkeypatch.context() as guard:
+        guard.setattr("backend.app.plans._build_config", unexpected_rebuild)
+        response = api_client.post(f"/api/plans/{target_id}/edits", json=edit)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"] == (
+        "Timing edits are unsupported for checkpoint plans and their descendants; "
+        "checkpoint configuration cannot be safely reconstructed for editing."
+    )
+    assert api_client.get(versions_url).json() == before
+
+    # Review remains available, and a checkpoint on another branch does not block
+    # ordinary edits from the original plan or its non-checkpoint descendants.
+    reviewed = api_client.post(f"/api/plans/{target_id}/actions", json={"action": "review"})
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "reviewed"
+    sibling = api_client.post(f"/api/plans/{root['id']}/edits", json=edit)
+    assert sibling.status_code == 201, sibling.text
+    retained = {"mission_start_hours": {selected["mission_id"]: selected["start_hour"]}}
+    ordinary_child = api_client.post(f"/api/plans/{sibling.json()['id']}/edits", json=retained)
+    assert ordinary_child.status_code == 201, ordinary_child.text
 
 
 def test_plan_content_and_history_are_immutable() -> None:

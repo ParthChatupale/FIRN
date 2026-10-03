@@ -25,6 +25,19 @@ class MissionEnergyPlannerTests(unittest.TestCase):
         self.assertEqual(result["simulator_replay"]["summary"]["unserved_energy_kwh"], 0.0)
         self.assertEqual(result["simulator_replay"]["summary"]["critical_violation_hours"], 0)
         self.assertEqual(len(result["dispatch"]), config.hours)
+        for row in result["dispatch"]:
+            self.assertAlmostEqual(
+                row["demand_kw"], row["baseline_demand_kw"] + row["mission_demand_kw"],
+                places=3,
+            )
+            supply = (
+                row["renewable_used_kw"] + sum(row["generator_output_kw"].values())
+                + row["battery_discharge_kw"]
+            )
+            self.assertAlmostEqual(
+                supply, row["demand_kw"] + row["battery_charge_kw"] + row["curtailed_kw"],
+                places=3,
+            )
         self.assertEqual(
             result["planning_rules"]["terminal_soc_target_kwh"],
             config.station.battery.initial_kwh,
