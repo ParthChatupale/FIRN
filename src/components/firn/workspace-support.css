@@ -1,0 +1,108 @@
+.workspace-utility-nav {
+  display: flex;
+  gap: 3px;
+}
+.workspace-utility-nav .studio-nav {
+  width: auto;
+  flex: 1;
+  gap: 7px;
+  padding: 0 8px;
+}
+.workspace-utility-nav svg {
+  flex-shrink: 0;
+}
+.workspace-support {
+  display: grid;
+  gap: 18px;
+}
+.workspace-support .studio-page-title {
+  margin-bottom: 0;
+}
+.workspace-support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.workspace-support-wide {
+  grid-column: 1 / -1;
+}
+.workspace-support .studio-panel {
+  padding: 22px;
+}
+.workspace-support .studio-panel-header {
+  flex-wrap: wrap;
+}
+.workspace-support .studio-panel-header h2 {
+  font-size: 15px;
+}
+.workspace-support p,
+.workspace-support li {
+  color: var(--studio-muted);
+  line-height: 1.7;
+}
+.workspace-support p {
+  margin: 12px 0;
+}
+.workspace-support .studio-footnote {
+  font-size: 12px;
+}
+.workspace-support-field {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.workspace-support-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  color: #e7eff7;
+  background: #172c3a;
+  border: 1px solid #34505e;
+  border-radius: 5px;
+}
+.workspace-support-field select:disabled {
+  opacity: 0.5;
+}
+.workspace-support-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin: 18px 0;
+}
+.workspace-support-details > div {
+  padding-top: 12px;
+  border-top: 1px solid var(--studio-border);
+}
+.workspace-support-details dt {
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+.workspace-support-details dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.workspace-support-question {
+  margin: 14px 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #72dbeb;
+}
+.workspace-support .workspace-support-notice {
+  margin: 0;
+  color: #72dbeb;
+}
+@media (max-width: 900px) {
+  .workspace-support-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .workspace-support-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-support .studio-panel {
+    padding: 16px;
+  }
+}

@@ -5,7 +5,7 @@ import { useOperatingWorkspace } from "@/lib/use-operating-workspace";
 import { formatRecordTime } from "@/lib/workspace-model";
 
 export const Route = createFileRoute("/about")({
-  head: () => ({ meta: [{ title: "About & Case Details — FIRN" }] }),
+  head: () => ({ meta: [{ title: "About FIRN & Case Details — FIRN" }] }),
   component: About,
 });
 function About() {

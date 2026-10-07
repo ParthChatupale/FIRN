@@ -10,7 +10,7 @@ Recording mode lives in the original `src/` app. Shared workflow uses `firn:pres
 - `/?workspace=backend`: retained API-connected workspace, requiring its usual services.
 - `npm run dev`: use Vite’s printed port.
 
-No backend files, PostgreSQL schema/migrations, login/settings or separate `frontend/` draft changes are part of these corrections.
+No backend files, PostgreSQL schema/migrations, login or separate `frontend/` draft changes are part of these corrections. Settings and About now remain in the current presentation shell; the explicit backend workspace retains its own earlier preference and diagnostic pages.
 
 ## Continuous case
 
@@ -27,6 +27,11 @@ Future drafts do not mutate the applied case. Applied forecast revisions preserv
 | Monitoring | Clock, observed/reference comparisons, mission progress and independent event assessment; links to Planner |
 | Energy & Assets | Capacity, generation/storage, modeled loads and resources |
 | Decision Log | Inputs, events, proposal and human-decision lineage |
+| Settings | Actual simulation speed, future planning allowance, local storage status and scene-checkpoint guidance |
+| About | Current model boundaries, workflow explanation and read-only details derived from the selected browser-local case |
+| Case studies | Four isolated, reproducible examples: baseline joint planning, storm/delay, severe derating continuation and infeasible full generator loss |
+
+Support routes `/settings`, `/about` and `/case-studies` retain the active simulation context. Case studies calculate fresh states with the same recording model; they never dispatch into or replace the selected case. Planning projections, supplied-work execution and infeasible responses are labeled separately. The field outcome reporting provision records operator assessments for review, without certifying field success or automatically stopping/rescheduling tasks.
 
 ## Preparation and attention
 

@@ -7,6 +7,7 @@ import {
   CloudSnow,
   Compass,
   LayoutDashboard,
+  Info,
   Menu,
   Radio,
   Settings,
@@ -25,6 +26,7 @@ import { PresentationScreen } from "./presentation-workspace";
 import { RecordingConnectivity } from "./recording-connectivity";
 import { NotificationButton, PreparationStatus } from "./recording-attention";
 import { StationClock, RehearsalControls } from "./recording-playback";
+import { WorkspaceSupport } from "./workspace-support";
 
 const nav = [
   { to: "/", label: "Operations", icon: LayoutDashboard },
@@ -35,7 +37,8 @@ const nav = [
   { to: "/scenario-simulator", label: "Scenario Simulator", icon: SlidersHorizontal },
   { to: "/decision-log", label: "Decision Log", icon: BookOpen },
 ] as const;
-export const PRESENTATION_ROUTES = nav.map((n) => n.to) as readonly string[];
+const SUPPORT_ROUTES = ["/settings", "/about", "/case-studies"] as const;
+export const PRESENTATION_ROUTES: readonly string[] = [...nav.map((n) => n.to), ...SUPPORT_ROUTES];
 
 export function PresentationShell() {
   const { state, dispatch, storageWarning } = usePresentation();
@@ -102,10 +105,25 @@ export function PresentationShell() {
             Connectivity
             <span className={`studio-status-dot ${state.uplink === "lost" ? "amber" : ""}`} />
           </button>
-          <Link className="studio-nav" to="/settings">
-            <Settings size={18} />
-            Settings
-          </Link>
+          <div className="workspace-utility-nav">
+            <Link
+              className={`studio-nav ${path === "/settings" ? "active" : ""}`}
+              to="/settings"
+              onClick={() => setMenu(false)}
+            >
+              <Settings size={18} />
+              Settings
+            </Link>
+            <Link
+              className={`studio-nav ${path === "/about" || path === "/case-studies" ? "active" : ""}`}
+              to="/about"
+              aria-label="About FIRN and case studies"
+              onClick={() => setMenu(false)}
+            >
+              <Info size={18} />
+              About
+            </Link>
+          </div>
           <button className="studio-source-tile" onClick={() => setDrawer("sources")}>
             <Radio size={17} />
             <span>
@@ -171,7 +189,11 @@ export function PresentationShell() {
               it.
             </p>
           )}
-          <PresentationScreen path={path} />
+          {SUPPORT_ROUTES.some((route) => route === path) ? (
+            <WorkspaceSupport path={path} />
+          ) : (
+            <PresentationScreen path={path} />
+          )}
           {state.preparation &&
             path !== "/mission-planner" &&
             path !== "/forecast" &&
@@ -280,6 +302,9 @@ export function PresentationShell() {
                     equipment or measure real forecasting performance.
                   </p>
                   <a href="/?workspace=backend">Open the existing connected workspace ↗</a>
+                  <Link to="/about" onClick={() => setDrawer(null)}>
+                    About FIRN & current case details ↗
+                  </Link>
                   <button
                     className="studio-button secondary"
                     onClick={() => {

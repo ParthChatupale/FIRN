@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as CaseStudiesRouteImport } from './routes/case-studies'
 import { Route as DecisionLogRouteImport } from './routes/decision-log'
 import { Route as EnergyAssetsRouteImport } from './routes/energy-assets'
 import { Route as ForecastRouteImport } from './routes/forecast'
@@ -28,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CaseStudiesRoute = CaseStudiesRouteImport.update({
+  id: '/case-studies',
+  path: '/case-studies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DecisionLogRoute = DecisionLogRouteImport.update({
@@ -74,6 +80,7 @@ const SettingsRoute = SettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/case-studies': typeof CaseStudiesRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/case-studies': typeof CaseStudiesRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
@@ -99,6 +107,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/case-studies': typeof CaseStudiesRoute
   '/decision-log': typeof DecisionLogRoute
   '/energy-assets': typeof EnergyAssetsRoute
   '/forecast': typeof ForecastRoute
@@ -113,6 +122,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/case-studies'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/case-studies'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/case-studies'
     | '/decision-log'
     | '/energy-assets'
     | '/forecast'
@@ -150,6 +162,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  CaseStudiesRoute: typeof CaseStudiesRoute
   DecisionLogRoute: typeof DecisionLogRoute
   EnergyAssetsRoute: typeof EnergyAssetsRoute
   ForecastRoute: typeof ForecastRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/case-studies': {
+      id: '/case-studies'
+      path: '/case-studies'
+      fullPath: '/case-studies'
+      preLoaderRoute: typeof CaseStudiesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/decision-log': {
@@ -238,6 +258,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  CaseStudiesRoute: CaseStudiesRoute,
   DecisionLogRoute: DecisionLogRoute,
   EnergyAssetsRoute: EnergyAssetsRoute,
   ForecastRoute: ForecastRoute,
