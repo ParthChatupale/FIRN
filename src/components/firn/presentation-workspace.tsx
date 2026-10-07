@@ -33,6 +33,7 @@ import { AttentionQueue, PreparationStatus, DecisionLink } from "./recording-att
 import { forecastCase, playbackBlock } from "@/lib/recording-workflow";
 import { buildComparisonReport, comparisonMatchesState } from "@/lib/recording-comparison";
 import { MissionActivity } from "./recording-playback";
+import { MissionIssueReporting } from "./recording-mission-report";
 import {
   currentStation,
   conflictCount,
@@ -799,7 +800,7 @@ function Monitor() {
               })
             }
           >
-            To weather · H{state.inputs.weatherHour}
+            To weather checkpoint
           </button>
           <button
             className="studio-button secondary"
@@ -811,7 +812,7 @@ function Monitor() {
               })
             }
           >
-            To asset checkpoint · H26
+            To asset checkpoint
           </button>
         </div>
         <span className="studio-playback-note">
@@ -872,19 +873,13 @@ function Monitor() {
         >
           {state.observedWeather ? "Weather recorded" : "Observe weather event"}
         </button>
-        <button
-          className="studio-button secondary"
-          disabled={paused || !!state.generatorEvent || state.hour < 26}
-          onClick={() => dispatch({ type: "generator-event" })}
-        >
-          {state.generatorEvent ? "Capacity loss recorded" : "Apply generator derating"}
-        </button>
         <small>
           {state.hour < state.inputs.weatherHour
-            ? `Weather event available at H${state.inputs.weatherHour}; generator checkpoint H26.`
+            ? "Weather observation becomes available when the scenario conditions arrive."
             : "Events update current observations; earlier intervals remain fixed."}
         </small>
       </div>
+      <MissionIssueReporting />
       <div className="studio-planner-grid">
         <div className="studio-stack">
           <Panel
@@ -935,9 +930,9 @@ function Monitor() {
                       strokeDasharray="3 4"
                       label={{ value: "Case H0", fill: "#91a7b5", fontSize: 10 }}
                     />
-                    {state.hour >= 26 && (
+                    {state.generatorEvent && (
                       <ReferenceLine
-                        x={26}
+                        x={state.generatorEvent.hour}
                         stroke="#edb45f"
                         label={{ value: "Capacity loss", fill: "#edb45f", fontSize: 10 }}
                       />

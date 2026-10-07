@@ -1,5 +1,7 @@
 # FIRN recording script — operator workflow
 
+Final filming narration and screen cues: [FIRN — final recording script](final-recording-script.md). This document remains the detailed functional rehearsal reference.
+
 Status: revised narration/actions match the implemented corrections. Browser rehearsal and final user visual acceptance remain pending. This thirteen-scene order supersedes the earlier baseline-joint V2 → weather V3 → adaptive V4 sequence.
 
 Before the walkthrough, give a brief disclosure outside the operating panels:

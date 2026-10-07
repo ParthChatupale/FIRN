@@ -24,6 +24,12 @@ import {
   validComparisonReport,
   type ComparisonReport,
 } from "./recording-comparison.ts";
+import {
+  createMissionIssueReport,
+  restoreMissionIssueReports,
+  type FieldAssessment,
+  type MissionIssueReport,
+} from "./recording-mission-reports.ts";
 
 export const WORKFLOW_KEY = "firn:presentation:v3";
 export const PREPARATION_MS = { plan: 2500, forecast: 1000, assessment: 1200 } as const;
@@ -56,6 +62,7 @@ export type WorkflowState = PresentationState & {
   forecastReadyBasis: number;
   comparisonReady: boolean;
   comparisonReport?: ComparisonReport;
+  missionIssueReports?: MissionIssueReport[];
   readyInputs: ScenarioInputs;
   responseRequired: boolean;
   attention: Attention[];
@@ -73,6 +80,7 @@ export type WorkflowAction = (
   | { type: "advance-minutes"; minutes: number }
   | { type: "set-lead-time"; minutes: number }
   | { type: "restore-scene"; snapshot: unknown }
+  | { type: "report-mission-issue"; missionId: string; assessment: FieldAssessment; detail: string }
 ) & { receivedAt?: string };
 
 type Notice = Pick<
@@ -268,6 +276,7 @@ export function initializeWorkflow(base = initialPresentation()): WorkflowState 
       ),
       responseRequired: false,
       attention: [],
+      missionIssueReports: [],
     },
     { type: "reset" },
   );
@@ -351,6 +360,7 @@ export function restoreWorkflow(raw: unknown): WorkflowState {
         ),
     responseRequired: value.responseRequired!,
     attention: value.attention,
+    missionIssueReports: restoreMissionIssueReports(value.missionIssueReports, base),
   };
   if (value.preparation)
     restored = notice(
@@ -380,6 +390,12 @@ function start(s: WorkflowState, kind: PreparationKind): WorkflowState {
 }
 export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowState {
   if (a.type === "reset") return { ...initializeWorkflow(), sequence: s.sequence + 100 };
+  if (a.type === "report-mission-issue") {
+    const reports = s.missionIssueReports ?? [];
+    const report = createMissionIssueReport(s, reports, a.missionId, a.assessment, a.detail);
+    // A field assessment must not fabricate completion, stop work, or authorize rescheduling.
+    return report ? { ...s, missionIssueReports: [...reports, report] } : s;
+  }
   if (a.type === "restore-scene") {
     if (!validSceneSnapshot(a.snapshot)) return s;
     const restored = restoreWorkflow(a.snapshot);

@@ -1,0 +1,85 @@
+/* Monitoring-only styles; no existing page or shared panel selectors are changed. */
+.monitor-mission-report {
+  margin-bottom: 18px;
+}
+.monitor-mission-report .studio-panel-header {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.monitor-mission-report .monitor-report-summary,
+.monitor-mission-report .monitor-report-note,
+.monitor-mission-report .monitor-report-actions span,
+.monitor-mission-report small {
+  color: #9bb0c0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.monitor-mission-report .monitor-report-summary {
+  margin: 0;
+}
+.monitor-mission-report .monitor-report-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+.monitor-mission-report .monitor-report-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.monitor-mission-report label {
+  display: grid;
+  gap: 7px;
+  color: #bed1df;
+  font-size: 12px;
+}
+.monitor-mission-report select,
+.monitor-mission-report textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #34505e;
+  border-radius: 6px;
+  background: #152b39;
+  color: #e4eef5;
+  font: inherit;
+}
+.monitor-mission-report textarea {
+  resize: vertical;
+}
+.monitor-mission-report select:focus-visible,
+.monitor-mission-report textarea:focus-visible {
+  outline: 2px solid #55d3e4;
+  outline-offset: 2px;
+}
+.monitor-mission-report .monitor-report-note {
+  margin: 0;
+}
+.monitor-mission-report .monitor-report-actions,
+.monitor-mission-report .monitor-report-record-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.monitor-mission-report .monitor-report-history {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.monitor-mission-report summary {
+  cursor: pointer;
+  color: #55d3e4;
+}
+.monitor-mission-report article {
+  padding: 14px 0;
+  border-bottom: 1px solid #304352;
+}
+.monitor-mission-report article p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .monitor-mission-report .monitor-report-fields {
+    grid-template-columns: 1fr;
+  }
+}

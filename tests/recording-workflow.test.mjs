@@ -382,3 +382,142 @@ test("simulator event controls require explicit selection and distinguish curren
   );
   assert.ok(simulator.includes("setCapacity(null)"));
 });
+
+test("field reports are metadata only and never certify or interrupt simulated work", () => {
+  let s = reduce(changed(), { type: "advance", hours: 8 });
+  const mission = s.activeSchedule.find((m) => m.short === "Field sampling");
+  assert.ok(m.missionServedMinutes(s, mission.id) > 0);
+  const before = s;
+  for (const assessment of ["review", "sufficient", "additional", "unable"]) {
+    s = reduce(s, {
+      type: "report-mission-issue",
+      missionId: mission.id,
+      assessment,
+      detail: "  Field sample collection interrupted; adequacy requires operator review.  ",
+    });
+  }
+  assert.equal(s.missionIssueReports.length, 4);
+  assert.equal(new Set(s.missionIssueReports.map((r) => r.id)).size, 4);
+  for (const report of s.missionIssueReports) {
+    assert.equal(report.hour, 8);
+    assert.equal(report.minute, 0);
+    assert.equal(report.planVersion, 2);
+    assert.equal(report.suppliedMinutes, m.missionServedMinutes(before, mission.id));
+    assert.equal(report.status, "needs-review");
+    assert.equal(report.detail.startsWith(" "), false);
+  }
+  const { missionIssueReports: ignoredBefore, ...coreBefore } = before;
+  const { missionIssueReports: ignoredAfter, ...coreAfter } = s;
+  assert.deepEqual(coreAfter, coreBefore);
+  assert.deepEqual(m.currentStation(s), m.currentStation(before));
+  assert.deepEqual(
+    m.resourceOutlook(s, s.activeKind),
+    m.resourceOutlook(before, before.activeKind),
+  );
+  assert.equal(m.missionProgress(s, mission), m.missionProgress(before, mission));
+  const future = reduce(s, { type: "advance", hours: 1 });
+  const expected = reduce(before, { type: "advance", hours: 1 });
+  assert.deepEqual(future.observations, expected.observations);
+  assert.deepEqual(future.missionMinutes, expected.missionMinutes);
+});
+
+test("field reporting rejects unknown or unstarted missions and invalid assessments or details", () => {
+  const baseline = w.initializeWorkflow();
+  const fieldId = baseline.activeSchedule.find((m) => m.short === "Field sampling").id;
+  const action = {
+    type: "report-mission-issue",
+    missionId: fieldId,
+    assessment: "review",
+    detail: "Field issue requires review.",
+  };
+  assert.equal(reduce(baseline, action), baseline);
+  const running = reduce(changed(), { type: "advance", hours: 7 });
+  assert.equal(m.missionServedMinutes(running, fieldId), 0);
+  assert.equal(reduce(running, action).missionIssueReports.length, 1);
+  for (const invalid of [
+    { missionId: "not-a-mission" },
+    { assessment: "automatic-success" },
+    { assessment: "toString" },
+    { detail: "   " },
+    { detail: "x".repeat(1001) },
+  ]) {
+    assert.equal(reduce(running, { ...action, ...invalid }), running);
+  }
+});
+
+test("field reports survive reload, navigation state and scene restoration; reset clears only the case", () => {
+  let s = reduce(changed(), { type: "advance", hours: 8 });
+  s = reduce(s, {
+    type: "report-mission-issue",
+    missionId: s.activeSchedule.find((m) => m.short === "Field sampling").id,
+    assessment: "additional",
+    detail: "Some samples were lost. More work may be needed.",
+  });
+  const raw = JSON.parse(JSON.stringify(s));
+  const restored = w.restoreWorkflow(raw);
+  assert.deepEqual(restored.missionIssueReports, s.missionIssueReports);
+  assert.equal(restored.hour, 8);
+  assert.equal(restored.activeVersion, 2);
+  assert.deepEqual(m.currentStation(restored), m.currentStation(s));
+  assert.equal(w.validSceneSnapshot(raw), true);
+  const scene = reduce(w.initializeWorkflow(), { type: "restore-scene", snapshot: raw });
+  assert.deepEqual(scene.missionIssueReports, s.missionIssueReports);
+  assert.equal(reduce(restored, { type: "reset" }).missionIssueReports.length, 0);
+  assert.equal(s.missionIssueReports.length, 1);
+});
+
+test("legacy or malformed optional field reports do not reset the recorded station case", () => {
+  let s = reduce(changed(), { type: "advance", hours: 8 });
+  s = reduce(s, {
+    type: "report-mission-issue",
+    missionId: s.activeSchedule.find((m) => m.short === "Field sampling").id,
+    assessment: "unable",
+    detail: "Equipment issue prevents further sample collection.",
+  });
+  const { missionIssueReports, ...legacy } = s;
+  const restoredLegacy = w.restoreWorkflow(JSON.parse(JSON.stringify(legacy)));
+  assert.deepEqual(restoredLegacy.missionIssueReports, []);
+  assert.equal(restoredLegacy.hour, 8);
+  assert.equal(restoredLegacy.activeVersion, 2);
+  const report = missionIssueReports[0];
+  for (const corrupt of [null, {}, { ...report, hour: 48 }, { ...report, status: "completed" }]) {
+    const restored = w.restoreWorkflow({ ...s, missionIssueReports: [corrupt] });
+    assert.deepEqual(restored.missionIssueReports, []);
+    assert.equal(restored.hour, 8);
+    assert.equal(restored.activeVersion, 2);
+    assert.deepEqual(restored.observations, s.observations);
+  }
+  const duplicate = w.restoreWorkflow({ ...s, missionIssueReports: [report, report] });
+  assert.equal(duplicate.missionIssueReports.length, 1);
+});
+
+test("mission reporting UI and event shortcut changes are confined to Monitoring", () => {
+  const source = readFileSync(
+    new URL("../src/components/firn/presentation-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("function Monitor()");
+  const end = source.indexOf("function Assets()");
+  const monitoring = source.slice(start, end);
+  assert.ok(monitoring.includes("<MissionIssueReporting />"));
+  assert.equal(source.slice(0, start).includes("<MissionIssueReporting />"), false);
+  assert.equal(source.slice(end).includes("<MissionIssueReporting />"), false);
+  assert.equal(monitoring.includes('dispatch({ type: "generator-event"'), false);
+  assert.equal(monitoring.includes('to="/scenario-simulator"'), false);
+  assert.equal(monitoring.includes("Generator event controls"), false);
+  assert.ok(monitoring.includes("To weather checkpoint"));
+  assert.ok(monitoring.includes("To asset checkpoint"));
+  assert.equal(monitoring.includes("To weather · H"), false);
+  assert.equal(monitoring.includes("H26"), false);
+  assert.ok(monitoring.includes("minutes: (26 - state.hour) * 60"));
+  assert.ok(monitoring.includes("minutes: (state.inputs.weatherHour - state.hour) * 60"));
+  assert.ok(monitoring.includes("{state.generatorEvent && ("));
+  const reportUi = readFileSync(
+    new URL("../src/components/firn/recording-mission-report.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(reportUi.includes('type: "report-mission-issue"'));
+  assert.ok(reportUi.includes("Save for review"));
+  assert.ok(reportUi.includes("does not stop execution"));
+  assert.ok(reportUi.includes("storageWarning"));
+});
