@@ -79,8 +79,8 @@ function OperatorEntry() {
           </div>
         )}
         <p className="mt-6 border-t border-border pt-4 text-xs leading-5 text-muted-foreground">
-          Local presentation profile, not password authentication. Roles describe your work; they do
-          not enforce access permissions. Existing decision records are not renamed.
+          Local operator profile, not password authentication. Roles describe your work; they do not
+          enforce access permissions. Existing decision records are not renamed.
         </p>
       </form>
     </>

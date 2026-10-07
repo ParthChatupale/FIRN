@@ -27,9 +27,9 @@ function WorkspaceSettings() {
       <div className="workspace-support-grid">
         <Panel
           title="Simulation playback"
-          meta={<span className="studio-chip">Demonstration only</span>}
+          meta={<span className="studio-chip">Simulated time</span>}
         >
-          <p>Accelerated time is a demonstration control, not the passage of real station time.</p>
+          <p>Playback advances the simulation clock, not real station time.</p>
           <label className="workspace-support-field">
             Station time per playback second
             <select
@@ -92,7 +92,7 @@ function WorkspaceSettings() {
             Illustrative allowance; not a station-certified operating requirement.
           </p>
         </Panel>
-        <Panel title="Local storage & scene checkpoints">
+        <Panel title="Workspace storage & saved snapshots">
           <span className={`studio-chip ${storageWarning ? "warn" : "good"}`}>
             {storageWarning ? "Storage warning" : "Browser-local workspace"}
           </span>
@@ -102,10 +102,12 @@ function WorkspaceSettings() {
               : "This browser retains the operating case, proposals, decisions and field issue reports. It is not a shared cloud database."}
           </p>
           <p>
-            {scenes.length} saved scene checkpoint{scenes.length === 1 ? "" : "s"}. Shift-click the
-            header clock to manage paused snapshots.
+            {scenes.length} saved snapshot{scenes.length === 1 ? "" : "s"}. Shift-click the header
+            clock to open simulation controls and manage snapshots.
           </p>
-          <p>Restoring a scene replaces the current local case. These settings do not reset it.</p>
+          <p>
+            Restoring a snapshot replaces the current local case. These settings do not reset it.
+          </p>
         </Panel>
         <Panel title="Operating conventions">
           <dl className="workspace-support-details">
@@ -224,7 +226,7 @@ function WorkspaceAbout() {
         </Panel>
         <Panel title="A virtual station, not a live deployment">
           <p>
-            This demonstration uses a fictional coastal polar station with authored, deterministic
+            This workspace models a fictional coastal polar station with authored, deterministic
             inputs inspired by real-world operating principles. It is not recorded Antarctic station
             telemetry or a calibrated digital twin.
           </p>
@@ -265,7 +267,7 @@ function WorkspaceAbout() {
           </p>
           <p>
             Issue reporting does not automatically stop work, reschedule dependent tasks or validate
-            sample quality. Those decisions remain outside the demonstrated implementation.
+            sample quality. Those decisions are not automated in this workspace.
           </p>
         </Panel>
         <div className="workspace-support-wide">

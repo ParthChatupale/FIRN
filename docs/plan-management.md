@@ -58,4 +58,4 @@ Then run the backend tests:
 pytest -q
 ```
 
-Fast API lifecycle tests use an isolated in-memory SQLite schema. Application persistence uses PostgreSQL; separate integration tests and browser rehearsal use the existing `firn_test_db` with rollback isolation. The original frontend is connected to the lifecycle and monitoring APIs, including explicit checkpoint continuation. See [Checkpoint 4 verification](verification/checkpoint-4/review.md) for coverage, review steps and the execution-policy boundary. No migration or production-data reset is performed as part of the frontend review.
+Fast API lifecycle tests use an isolated in-memory SQLite schema. Application persistence uses PostgreSQL; separate integration tests and browser review use the existing `firn_test_db` with rollback isolation. The root application's connected workspace uses the lifecycle and monitoring APIs, including explicit checkpoint continuation. Historical browser coverage and review records are preserved outside this source repository in the local project materials archive. No migration or production-data reset is performed as part of the frontend review.

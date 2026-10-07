@@ -18,7 +18,7 @@ export function StationClock({ openControls }: { openControls: () => void }) {
       className="studio-clock recording-clock-button"
       aria-label={`${state.playback.running ? "Pause" : "Resume"} station clock. ${block ?? state.playback.reason}`}
       aria-pressed={state.playback.running}
-      title={`${block ?? state.playback.reason}. Click to play/pause; Shift-click for rehearsal controls.`}
+      title={`${block ?? state.playback.reason}. Click to play/pause; Shift-click for simulation controls.`}
       onClick={(e) => (e.shiftKey ? openControls() : dispatch({ type: "toggle-playback" }))}
     >
       <strong>{stationTime(stationHour(state))}</strong>
@@ -38,16 +38,16 @@ export function RehearsalControls({ close }: { close: () => void }) {
     <section
       className="recording-rehearsal-panel"
       role="dialog"
-      aria-label="Rehearsal playback and checkpoints"
+      aria-label="Simulation controls and saved snapshots"
       onKeyDown={(e) => {
         if (e.key === "Escape") close();
       }}
     >
       <header>
-        <strong>Playback & scene checkpoints</strong>
+        <strong>Simulation Controls</strong>
         <button
           className="studio-icon-button"
-          aria-label="Close rehearsal controls"
+          aria-label="Close simulation controls"
           onClick={close}
         >
           <X size={18} />
@@ -57,7 +57,7 @@ export function RehearsalControls({ close }: { close: () => void }) {
         {stationTime(stationHour(state))} · {state.playback.reason}
       </p>
       <p className="studio-footnote">
-        Rehearsal controls only. Close this panel before recording. Restoring a scene replaces this
+        Control simulated time and save workspace snapshots. Restoring a snapshot replaces the
         browser-local case, including its decisions; backend records are unaffected.
       </p>
       <label>
@@ -104,11 +104,11 @@ export function RehearsalControls({ close }: { close: () => void }) {
         </button>
       </div>
       <label>
-        Save current scene
+        Save workspace snapshot
         <input
           value={name}
           maxLength={80}
-          placeholder="Scene name"
+          placeholder="Snapshot name"
           onChange={(e) => setName(e.target.value)}
         />
       </label>
@@ -142,10 +142,10 @@ export function RehearsalControls({ close }: { close: () => void }) {
       </div>
       {pending && (
         <div className="recording-restore-confirm" role="alert">
-          <strong>Replace the current recording case?</strong>
+          <strong>Restore this workspace snapshot?</strong>
           <p>
-            Current browser-local changes since this snapshot will be replaced. Save them first if
-            needed.
+            Current browser-local changes since this snapshot will be replaced. Save a new snapshot
+            first if you want to keep them.
           </p>
           <button
             className="studio-button"
@@ -155,7 +155,7 @@ export function RehearsalControls({ close }: { close: () => void }) {
               close();
             }}
           >
-            Restore scene
+            Restore snapshot
           </button>
           <button className="studio-button quiet" onClick={() => setPending(null)}>
             Cancel

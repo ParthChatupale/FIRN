@@ -72,4 +72,4 @@ Automated end-to-end tests cover storms, generator failure, sustained low-renewa
 - A checkpoint replan uses the observed state and a new deterministic synthetic future trajectory. The future is not derived from actual future observations or a calibrated forecast distribution.
 - Generator and mission state reconstruction follows available simulator telemetry/events; this remains a simplified model.
 - Operator identity is still a caller-provided label, with no authentication/authorization layer.
-- The original frontend is connected; see [Checkpoint 4 review and screenshots](verification/checkpoint-4/review.md). The separate `frontend/` draft is unchanged.
+- The root application retains the connected monitoring workflow. Historical browser review screenshots and the separate unfinished frontend draft are preserved outside this source repository in the local project materials archive.

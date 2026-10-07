@@ -111,7 +111,7 @@ function About() {
         <section className="panel p-6 xl:col-span-2">
           <SectionTitle>Identity & integration boundaries</SectionTitle>
           <p className="text-sm leading-6 text-muted-foreground">
-            Operator profiles are local presentation identities, not verified login credentials or
+            Operator profiles are local workspace identities, not verified login credentials or
             authorization. PostgreSQL stores operational records locally. Remote synchronization,
             live hardware adapters and production authentication are not implemented in this
             checkpoint.

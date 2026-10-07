@@ -185,8 +185,7 @@ export function PresentationShell() {
         <main id="station-workspace" className="studio-main">
           {storageWarning && (
             <p role="status" className="studio-storage-warning">
-              Browser storage unavailable. This presentation remains usable, but reload may reset
-              it.
+              Browser storage unavailable. This workspace remains usable, but reload may reset it.
             </p>
           )}
           {SUPPORT_ROUTES.some((route) => route === path) ? (
@@ -295,7 +294,7 @@ export function PresentationShell() {
                   </p>
                 </div>
                 <div className="studio-note">
-                  <strong>Presentation boundary</strong>
+                  <strong>Workspace boundaries</strong>
                   <p>
                     This workspace uses a deterministic illustrative model and browser-local
                     decision records. It does not call the backend, run its optimizer, control
@@ -312,7 +311,7 @@ export function PresentationShell() {
                       openRehearsal();
                     }}
                   >
-                    Playback & scene checkpoints
+                    Simulation controls & saved snapshots
                   </button>
                 </div>
               </>

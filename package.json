@@ -1,5 +1,5 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "firn-polar-ops",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -11,8 +11,8 @@
     "lint": "eslint .",
     "test:workspace": "node --experimental-strip-types --test tests/workspace-model.test.mjs",
     "test:ui": "node --experimental-strip-types --test tests/workspace-model.test.mjs tests/operations-metrics.test.mjs tests/api-transport.test.mjs tests/planning-inputs.test.mjs tests/monitoring-model.test.mjs",
-    "test:presentation": "node --experimental-strip-types --test tests/presentation-model.test.mjs tests/recording-workflow.test.mjs tests/recording-playback.test.mjs tests/recording-history.test.mjs tests/workspace-details.test.mjs",
-    "recording:export": "node --experimental-strip-types scripts/export-recording-case.mjs --output docs/verification/recording-case/data.json",
+    "test:simulation": "node --experimental-strip-types --test tests/presentation-model.test.mjs tests/recording-workflow.test.mjs tests/recording-playback.test.mjs tests/recording-history.test.mjs tests/workspace-details.test.mjs tests/workspace-naming.test.mjs",
+    "test:presentation": "npm run test:simulation",
     "format": "prettier --write ."
   },
   "overrides": {

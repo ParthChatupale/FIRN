@@ -822,7 +822,7 @@ function Monitor() {
               ? "Open Mission Planner to assess a response before continuing."
               : state.preparation
                 ? "Preparation in progress; operating clock retained."
-                : `${state.playback.reason}. Click the header clock to play/pause; Shift-click for scene controls.`}
+                : `${state.playback.reason}. Click the header clock to play/pause; Shift-click for simulation controls.`}
         </span>
       </div>
       <div className="studio-kpi-grid">
@@ -1248,7 +1248,7 @@ function Decisions() {
                 </button>
                 {selected === r.id && (
                   <div className="studio-record-detail">
-                    Record {r.id} · browser-local presentation ·{" "}
+                    Record {r.id} · browser-local workspace ·{" "}
                     {r.sync === "acknowledged" ? "Mock receiver acknowledged" : r.sync}
                     <br />
                     No hardware command or backend transaction was issued.

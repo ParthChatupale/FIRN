@@ -402,7 +402,7 @@ export function workflowReducer(s: WorkflowState, a: WorkflowAction): WorkflowSt
     return {
       ...restored,
       sequence: Math.max(s.sequence, restored.sequence) + 100,
-      playback: { ...restored.playback, running: false, reason: "Scene restored" },
+      playback: { ...restored.playback, running: false, reason: "Snapshot restored" },
     };
   }
   if (a.type === "set-lead-time") {

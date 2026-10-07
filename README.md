@@ -13,6 +13,16 @@ When FIRN is opened, the operator can move through a connected station workflow 
 5. Read the reasoning behind the recommendation.
 6. Compare the operating position before and after the change.
 
+## Repository layout
+
+- `src/` and `public/`: the deployed application, station model and live assets.
+- `backend/`: the separate API, simulation and optimization implementation.
+- `tests/`: automated checks for the application and backend.
+- `docs/`: technical setup, data contracts and model/API documentation.
+- `scripts/`: backend integration-test helpers.
+
+Local filming scripts, planning notes, screenshots, generated evidence and the unfinished standalone frontend draft are preserved in the sibling `C:/FIRN/project-materials` folder, outside this application repository. Files named `presentation-*` inside `src/` are runtime modules, not filming material. Dependencies, environment files and generated builds remain ignored by Git.
+
 ## Operating model
 
 <p align="center">
@@ -25,7 +35,7 @@ The operator remains in control. FIRN recommends, explains, and adapts; it does 
 
 ## The FIRN workspace
 
-### Station Overview
+### Operations
 
 The landing screen presents the current operating picture:
 
@@ -57,29 +67,29 @@ The Energy & Assets workspace shows the infrastructure FIRN is planning around:
 
 This makes it clear which assets are available to the operating plan and which are constrained or unavailable.
 
-### Forecast & Risk
+### Look ahead
 
 The Forecast workspace shows the next operating window for:
 
 - renewable generation;
 - station demand;
 - battery state of charge;
-- forecast confidence;
+- nominal and configured adverse-case conditions;
 - upcoming weather-driven risk.
 
 The forecast view makes the relationship between future conditions and mission timing visible.
 
 ### Scenario Simulator
 
-The Scenario Simulator is the main interaction surface for changing station conditions. It provides selectable operating scenarios:
+The Scenario Simulator is the main interaction surface for comparing baseline, draft and applied weather and resupply assumptions. It also provides independent modeled weather observations and generator capacity-loss events. Forecast assumptions and observed events remain separate; previewing inputs does not activate a plan or rewrite past operation.
 
-- Normal Conditions;
-- Severe Storm;
-- Generator Failure;
-- Fuel Resupply Delay;
-- Low Battery Capacity.
+### Monitoring
 
-Each scenario can be executed through the FastAPI simulation service. The interface displays the persisted run summary and hourly telemetry returned from PostgreSQL. The separate reference panels are illustrative; the current simulator executes a supplied schedule and baseline dispatch rather than optimizing or replanning missions.
+Monitoring compares modeled observations with the issued reference and shows supplied mission progress, battery and fuel inventories. Operators can record field issues and their assessment for review; operating-time completion does not certify a successful field outcome or automatically reschedule tasks.
+
+### Settings, About & Case Studies
+
+Settings controls simulation playback speed and the planning allowance for future work. Simulation Controls, accessible by Shift-clicking the header clock, manages saved workspace snapshots. About explains the current model and displays the selected case. Case Studies derives isolated baseline, storm/resupply, generator-derating and infeasible full-loss examples without modifying the active workspace.
 
 ### Decision Log
 
@@ -93,9 +103,9 @@ It gives the operator a readable history of why a simulated action was taken and
 
 ## Current operating environment
 
-The screens currently use synthetic scenario state local to the browser. Alongside that interface, FIRN now includes a deterministic Python station simulation engine that runs hourly scenarios from explicit station, resource, weather, mission, and event inputs.
+The default FIRN workspace uses a deterministic browser-local station model with shared inputs, minute-integrated resource accounting, mission progress, plan authorization and decision history. No API or database is required to use this workspace. Its generated operating history is inspection context, not recorded station telemetry or forecast training data.
 
-Neither the interface nor the simulation engine is connected to live station telemetry, real sensors, or external weather services. The engine is a reproducible operating model; it executes a supplied mission schedule and baseline dispatch policy. The Scenario Simulator is connected to a FastAPI/PostgreSQL persistence slice; its Phase 2 `simulation_runs` / `simulation_telemetry` migration is applied to the local `firn_db`. This is not the final FIRN operational database schema.
+Neither the workspace nor the separate Python simulation engine is connected to live station telemetry, real sensors or external weather services. Model checks do not certify engineering safety or prove global optimality. The retained API-connected workspace at `/?workspace=backend` uses FastAPI/PostgreSQL and remains separate from the default simulation workflow.
 
 The application is intentionally focused on making the operating workflow clear and believable. The planning experience can become more detailed over time without changing the operator-facing workspace.
 
@@ -105,19 +115,11 @@ The application is intentionally focused on making the operating workflow clear 
 
 - Node.js 20 or newer
 - npm
-- Python 3.11 or newer
+- Python 3.11 or newer and PostgreSQL only for the separate API-connected workspace
 
 ### Start the workspace
 
-Configure Python dependencies and local PostgreSQL credentials by following [docs/backend-setup.md](docs/backend-setup.md). Because PostgreSQL is installed in WSL on this workstation, start the backend in a WSL terminal—not Windows PowerShell:
-
-```sh
-cd /mnt/c/FIRN/firn-polar-ops
-source .venv-wsl/bin/activate
-uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Then start the frontend in another terminal:
+Start the default FIRN workspace:
 
 ```sh
 npm install
@@ -126,7 +128,7 @@ npm run dev
 
 Open the local URL printed by Vite.
 
-The Python API and PostgreSQL setup instructions are in [docs/backend-setup.md](docs/backend-setup.md).
+To use the optional API-connected workspace, configure the Python API and PostgreSQL using [docs/backend-setup.md](docs/backend-setup.md), then open `/?workspace=backend`.
 
 ### Build and preview
 
@@ -144,7 +146,7 @@ FIRN currently provides a connected station workspace with:
 - mission, energy, asset, forecast, and decision views;
 - simulated recommendations and adaptive responses;
 - explainable decision dialogs;
-- responsive layouts for presentation and laptop use;
+- responsive desktop and narrow-screen layouts;
 - clear separation between station simulation and live infrastructure.
 
 The central experience is the transition from a stable operating plan to a changed condition, followed by FIRN's recommendation and the operator's review of what changed.

@@ -81,7 +81,7 @@ export function RecordingSimulator() {
       {reset && (
         <div className="studio-reset-confirm" role="alert">
           <span>
-            Reset this recording case and its browser-local decisions? Database records are
+            Reset this simulation case and its browser-local decisions? Database records are
             untouched.
           </span>
           <button
